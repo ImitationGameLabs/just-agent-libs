@@ -1,0 +1,109 @@
+use just_common::transport::http;
+use reqwest::Method;
+use serde::{Serialize, de::DeserializeOwned};
+
+use crate::{
+    ChatCompletionStream, DeepSeekConfig, Error,
+    types::{
+        balance::GetUserBalanceResponse,
+        chat::{ChatCompletion, CreateChatCompletionRequest},
+        models::ListModelsResponse,
+    },
+};
+
+/// Async DeepSeek API client.
+#[derive(Clone, Debug)]
+pub struct DeepSeekClient {
+    http: reqwest::Client,
+    base_url: String,
+}
+
+impl DeepSeekClient {
+    /// Creates a client with default DeepSeek configuration.
+    pub fn new(api_key: impl Into<String>) -> Result<Self, Error> {
+        Self::with_config(DeepSeekConfig::new(api_key))
+    }
+
+    /// Creates a client with a custom base URL.
+    pub fn with_base_url(
+        api_key: impl Into<String>,
+        base_url: impl Into<String>,
+    ) -> Result<Self, Error> {
+        Self::with_config(DeepSeekConfig::new(api_key).with_base_url(base_url))
+    }
+
+    /// Creates a client from a validated configuration value.
+    pub fn with_config(config: DeepSeekConfig) -> Result<Self, Error> {
+        config.validate()?;
+        let http =
+            http::build_http_client(config.api_key(), config.timeout(), config.user_agent())?;
+
+        Ok(Self { http, base_url: config.base_url().trim_end_matches('/').to_owned() })
+    }
+
+    /// Executes a non-streaming chat completion request.
+    pub async fn create_chat_completion(
+        &self,
+        request: CreateChatCompletionRequest,
+    ) -> Result<ChatCompletion, Error> {
+        if request.stream.unwrap_or(false) {
+            return Err(Error::InvalidRequest(
+                "stream=true is not supported by create_chat_completion; use stream_chat_completion instead",
+            ));
+        }
+
+        self.request_json(Method::POST, "/chat/completions", Some(&request))
+            .await
+    }
+
+    /// Starts a streaming chat completion request.
+    pub async fn stream_chat_completion(
+        &self,
+        mut request: CreateChatCompletionRequest,
+    ) -> Result<ChatCompletionStream, Error> {
+        request.stream = Some(true);
+
+        let response = self
+            .request(Method::POST, "/chat/completions", Some(&request))
+            .await?;
+
+        Ok(ChatCompletionStream::from_response(response)?)
+    }
+
+    /// Lists models currently exposed by the configured endpoint.
+    pub async fn list_models(&self) -> Result<ListModelsResponse, Error> {
+        self.request_json(Method::GET, "/models", Option::<&()>::None)
+            .await
+    }
+
+    /// Returns the current user balance state.
+    pub async fn get_user_balance(&self) -> Result<GetUserBalanceResponse, Error> {
+        self.request_json(Method::GET, "/user/balance", Option::<&()>::None)
+            .await
+    }
+
+    async fn request_json<Req, Resp>(
+        &self,
+        method: Method,
+        path: &str,
+        body: Option<&Req>,
+    ) -> Result<Resp, Error>
+    where
+        Req: Serialize + ?Sized,
+        Resp: DeserializeOwned,
+    {
+        Ok(http::request_json::<Req, Resp>(&self.http, &self.base_url, method, path, body).await?)
+    }
+
+    async fn request<Req>(
+        &self,
+        method: Method,
+        path: &str,
+        body: Option<&Req>,
+    ) -> Result<reqwest::Response, Error>
+    where
+        Req: Serialize + ?Sized,
+    {
+        Ok(http::request::<Req>(&self.http, &self.base_url, method, path, body).await?)
+    }
+}

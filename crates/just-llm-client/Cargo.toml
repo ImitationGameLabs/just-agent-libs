@@ -1,0 +1,51 @@
+[package]
+name = "just-llm-client"
+edition = "2024"
+version.workspace = true
+license.workspace = true
+
+[features]
+default = ["deepseek", "openai-compat"]
+deepseek = ["dep:just-deepseek"]
+openai-compat = ["dep:just-openai-compat"]
+
+[dependencies]
+async-trait = { workspace = true }
+just-common = { workspace = true }
+just-deepseek = { workspace = true, optional = true }
+futures-core = { workspace = true }
+futures-util = { workspace = true }
+just-openai-compat = { workspace = true, optional = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokenx-rs = { workspace = true }
+
+[dev-dependencies]
+dotenvy = { workspace = true }
+tokio = { workspace = true }
+wiremock = { workspace = true }
+
+[[example]]
+name = "runtime_selected_provider"
+required-features = ["deepseek", "openai-compat"]
+
+[[example]]
+name = "deepseek_simple_chat"
+required-features = ["deepseek"]
+
+[[example]]
+name = "openai_compat_simple_chat"
+required-features = ["openai-compat"]
+
+[[example]]
+name = "openai_compat_registry"
+required-features = ["openai-compat"]
+
+[[example]]
+name = "deepseek_tool_call"
+required-features = ["deepseek"]
+
+[[example]]
+name = "openai_compat_tool_call"
+required-features = ["openai-compat"]

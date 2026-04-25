@@ -1,0 +1,619 @@
+#[cfg(feature = "openai-compat")]
+use futures_util::StreamExt;
+#[cfg(any(feature = "deepseek", feature = "openai-compat"))]
+use just_llm_client::CapabilityNegotiation;
+#[cfg(feature = "openai-compat")]
+use just_llm_client::StreamingChatCompletion;
+#[cfg(feature = "openai-compat")]
+use just_llm_client::error::Capability;
+#[cfg(feature = "deepseek")]
+use just_llm_client::provider::DeepSeekBackend;
+#[cfg(feature = "openai-compat")]
+use just_llm_client::provider::OpenAiCompatBackend;
+use just_llm_client::types::chat::Usage;
+#[cfg(feature = "deepseek")]
+use just_llm_client::types::chat::{ToolChoice, ToolChoiceMode};
+use just_llm_client::types::token::TokenEstimateKind;
+#[cfg(any(feature = "deepseek", feature = "openai-compat"))]
+use just_llm_client::{
+    ChatCompletion,
+    error::LlmError,
+    types::chat::{ChatCompletionRequest, ChatMessage},
+};
+#[cfg(any(feature = "deepseek", feature = "openai-compat"))]
+use serde_json::json;
+#[cfg(any(feature = "deepseek", feature = "openai-compat"))]
+use wiremock::{
+    Mock, MockServer, ResponseTemplate,
+    matchers::{method, path},
+};
+
+#[cfg(feature = "deepseek")]
+fn deepseek_backend(server: &MockServer) -> DeepSeekBackend {
+    DeepSeekBackend::with_base_url("test-key", server.uri()).unwrap()
+}
+
+#[cfg(feature = "openai-compat")]
+fn openai_backend(server: &MockServer) -> OpenAiCompatBackend {
+    OpenAiCompatBackend::with_base_url("test-key", server.uri()).unwrap()
+}
+
+// --- DeepSeek tests ---
+
+#[cfg(feature = "deepseek")]
+#[tokio::test]
+async fn deepseek_adapter_maps_chat_and_balance() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "chatcmpl-1",
+            "object": "chat.completion",
+            "created": 1,
+            "model": "deepseek-v4-pro",
+            "choices": [
+                {
+                    "index": 0,
+                    "finish_reason": "stop",
+                    "message": {
+                        "role": "assistant",
+                        "content": "hello"
+                    }
+                }
+            ],
+            "usage": {
+                "completion_tokens": 1,
+                "prompt_tokens": 2,
+                "prompt_cache_hit_tokens": 0,
+                "prompt_cache_miss_tokens": 2,
+                "total_tokens": 3
+            }
+        })))
+        .mount(&server)
+        .await;
+
+    Mock::given(method("GET"))
+        .and(path("/user/balance"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "is_available": true,
+            "balance_infos": [
+                {
+                    "currency": "USD",
+                    "total_balance": "10.00",
+                    "granted_balance": "1.00",
+                    "topped_up_balance": "9.00"
+                }
+            ]
+        })))
+        .mount(&server)
+        .await;
+
+    let backend = deepseek_backend(&server);
+    let response = backend
+        .create_chat_completion(ChatCompletionRequest::new(
+            "deepseek-v4-pro",
+            vec![ChatMessage::user("hello")],
+        ))
+        .await
+        .unwrap();
+    let balance = backend.balance().unwrap().get_balance().await.unwrap();
+
+    assert_eq!(response.first_choice_content(), Some("hello"));
+    assert!(balance.is_available);
+}
+
+#[cfg(feature = "deepseek")]
+#[tokio::test]
+async fn preparation_rejects_invalid_request_combinations() {
+    let server = MockServer::start().await;
+    let backend = deepseek_backend(&server);
+    let mut request = ChatCompletionRequest::new("deepseek-v4-pro", vec![ChatMessage::user("x")]);
+    request.tool_choice = Some(ToolChoice::Mode(ToolChoiceMode::Auto));
+
+    let error = backend.prepared_request(request).await.unwrap_err();
+
+    assert!(matches!(error, LlmError::InvalidRequest(_)));
+}
+
+#[cfg(feature = "deepseek")]
+#[tokio::test]
+async fn token_estimation_returns_approximate_estimate() {
+    let server = MockServer::start().await;
+    let backend = deepseek_backend(&server);
+    let prepared = backend
+        .prepared_request(ChatCompletionRequest::new(
+            "deepseek-v4-pro",
+            vec![ChatMessage::user("estimate")],
+        ))
+        .await
+        .unwrap();
+
+    let estimate = backend
+        .token_estimation()
+        .unwrap()
+        .estimate_tokens(&prepared)
+        .await
+        .unwrap();
+
+    assert!(estimate.prompt_tokens > 0);
+    assert_eq!(estimate.total_tokens, None);
+    assert_eq!(estimate.kind, TokenEstimateKind::Approximate);
+    assert_eq!(estimate.source.as_deref(), Some("tokenx-rs"));
+}
+
+#[cfg(feature = "deepseek")]
+#[tokio::test]
+async fn deepseek_adapter_preserves_cache_usage_when_reported() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "chatcmpl-5",
+            "object": "chat.completion",
+            "created": 1,
+            "model": "deepseek-v4-pro",
+            "choices": [
+                {
+                    "index": 0,
+                    "finish_reason": "stop",
+                    "message": {
+                        "role": "assistant",
+                        "content": "hello"
+                    }
+                }
+            ],
+            "usage": {
+                "completion_tokens": 1,
+                "prompt_tokens": 2,
+                "prompt_cache_hit_tokens": 5,
+                "prompt_cache_miss_tokens": 7,
+                "total_tokens": 3
+            }
+        })))
+        .mount(&server)
+        .await;
+
+    let backend = deepseek_backend(&server);
+    let response = backend
+        .create_chat_completion(ChatCompletionRequest::new(
+            "deepseek-v4-pro",
+            vec![ChatMessage::user("hello")],
+        ))
+        .await
+        .unwrap();
+
+    let usage = response.usage.expect("usage should be present");
+    assert_eq!(usage.prompt_cache_hit_tokens, Some(5));
+    assert_eq!(usage.prompt_cache_miss_tokens, Some(7));
+}
+
+// --- OpenAI-compatible tests ---
+
+#[cfg(feature = "openai-compat")]
+#[tokio::test]
+async fn openai_compat_adapter_maps_models_and_marks_balance_unsupported() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "object": "list",
+            "data": [
+                {
+                    "id": "gpt-4.1-mini",
+                    "object": "model",
+                    "owned_by": "example"
+                }
+            ]
+        })))
+        .mount(&server)
+        .await;
+
+    let backend = openai_backend(&server);
+    let models = backend
+        .model_catalog()
+        .unwrap()
+        .list_models()
+        .await
+        .unwrap();
+    let error = match backend.balance() {
+        Ok(_) => panic!("balance negotiation should fail for openai-compatible"),
+        Err(error) => error,
+    };
+
+    assert_eq!(models.data[0].id, "gpt-4.1-mini");
+    assert!(matches!(
+        error,
+        LlmError::UnsupportedCapability {
+            backend: "openai-compatible",
+            capability: Capability::Balance,
+        }
+    ));
+}
+
+#[cfg(feature = "openai-compat")]
+#[tokio::test]
+async fn prepared_requests_can_be_previewed_and_executed() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "chatcmpl-2",
+            "object": "chat.completion",
+            "created": 1,
+            "model": "gpt-4.1-mini",
+            "choices": [
+                {
+                    "index": 0,
+                    "finish_reason": "stop",
+                    "message": {
+                        "role": "assistant",
+                        "content": "prepared"
+                    }
+                }
+            ]
+        })))
+        .mount(&server)
+        .await;
+
+    let backend = openai_backend(&server);
+    let prepared = backend
+        .prepared_request(ChatCompletionRequest::new(
+            "gpt-4.1-mini",
+            vec![ChatMessage::user("hello from prepared")],
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(prepared.backend_id(), "openai-compatible");
+    assert_eq!(prepared.model(), Some("gpt-4.1-mini"));
+    assert_eq!(prepared.message_count(), 1);
+    assert_eq!(prepared.preview().tool_count, 0);
+    assert!(prepared.request_body_text().contains("\"messages\""));
+
+    let response = backend.send_prepared(&prepared).await.unwrap();
+
+    assert_eq!(response.first_choice_content(), Some("prepared"));
+}
+
+#[cfg(feature = "openai-compat")]
+#[tokio::test]
+async fn prepare_and_estimate_chat_completion_returns_consistent_preview() {
+    let server = MockServer::start().await;
+    let backend = openai_backend(&server);
+    let prepared = backend
+        .prepared_request(
+            ChatCompletionRequest::new("gpt-4.1-mini", vec![ChatMessage::user("estimate")])
+                .with_system_prompt("You are a concise assistant."),
+        )
+        .await
+        .unwrap();
+    let estimate = backend
+        .token_estimation()
+        .unwrap()
+        .estimate_tokens(&prepared)
+        .await
+        .unwrap();
+
+    assert_eq!(prepared.backend_id(), "openai-compatible");
+    assert_eq!(prepared.model(), Some("gpt-4.1-mini"));
+    assert_eq!(prepared.preview().tool_count, 0);
+    assert!(estimate.prompt_tokens > 0);
+}
+
+#[cfg(feature = "openai-compat")]
+#[tokio::test]
+async fn prepared_requests_round_trip_and_execute_through_backend() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "chatcmpl-roundtrip",
+            "object": "chat.completion",
+            "created": 1,
+            "model": "gpt-4.1-mini",
+            "choices": [
+                {
+                    "index": 0,
+                    "finish_reason": "stop",
+                    "message": {
+                        "role": "assistant",
+                        "content": "round trip"
+                    }
+                }
+            ]
+        })))
+        .mount(&server)
+        .await;
+
+    let backend = openai_backend(&server);
+    let prepared = backend
+        .prepared_request(ChatCompletionRequest::new(
+            "gpt-4.1-mini",
+            vec![ChatMessage::user("round trip")],
+        ))
+        .await
+        .unwrap();
+
+    let serialized = serde_json::to_string(&prepared).unwrap();
+    let deserialized: just_llm_client::types::prepared::PreparedChatRequest =
+        serde_json::from_str(&serialized).unwrap();
+    let response = backend.send_prepared(&deserialized).await.unwrap();
+
+    assert_eq!(deserialized, prepared);
+    assert_eq!(deserialized.preview(), prepared.preview());
+    assert_eq!(response.first_choice_content(), Some("round trip"));
+}
+
+#[cfg(feature = "openai-compat")]
+#[tokio::test]
+async fn create_chat_completion_rejects_streaming_requests() {
+    let server = MockServer::start().await;
+    let backend = openai_backend(&server);
+    let mut request = ChatCompletionRequest::new("gpt-4.1-mini", vec![ChatMessage::user("x")]);
+    request.stream = Some(true);
+
+    let error = backend.create_chat_completion(request).await.unwrap_err();
+
+    assert!(matches!(error, LlmError::InvalidRequest(_)));
+}
+
+#[cfg(feature = "openai-compat")]
+#[tokio::test]
+async fn stream_chat_completion_promotes_stream_flag() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_raw(
+                    "data: {\"id\":\"chatcmpl-3\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"gpt-4.1-mini\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"hi\"}}]}\n\ndata: [DONE]\n",
+                    "text/event-stream",
+                ),
+        )
+        .mount(&server)
+        .await;
+
+    let backend = openai_backend(&server);
+    let _stream = backend
+        .stream_chat_completion(ChatCompletionRequest::new(
+            "gpt-4.1-mini",
+            vec![ChatMessage::user("stream please")],
+        ))
+        .await
+        .unwrap();
+}
+
+#[cfg(feature = "openai-compat")]
+#[tokio::test]
+async fn prepared_streaming_requests_can_be_previewed_and_executed() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_raw(
+                    "data: {\"id\":\"chatcmpl-stream-prepared\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"gpt-4.1-mini\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hi\"}}]}\n\ndata: [DONE]\n",
+                    "text/event-stream",
+                ),
+        )
+        .mount(&server)
+        .await;
+
+    let backend = openai_backend(&server);
+    let prepared = backend
+        .prepared_streaming_request(ChatCompletionRequest::new(
+            "gpt-4.1-mini",
+            vec![ChatMessage::user("stream please")],
+        ))
+        .await
+        .unwrap();
+    let serialized = serde_json::to_string(&prepared).unwrap();
+    let deserialized: just_llm_client::types::prepared::PreparedChatRequest =
+        serde_json::from_str(&serialized).unwrap();
+
+    assert!(prepared.has_stream());
+    assert_eq!(deserialized, prepared);
+
+    let mut stream = backend.send_prepared_stream(&deserialized).await.unwrap();
+    let first = stream.next().await.unwrap().unwrap();
+
+    assert_eq!(first.choices[0].delta.content.as_deref(), Some("hi"));
+}
+
+#[cfg(feature = "openai-compat")]
+#[tokio::test]
+async fn non_stream_sender_rejects_prepared_streaming_requests() {
+    let server = MockServer::start().await;
+    let backend = openai_backend(&server);
+    let prepared = backend
+        .prepared_streaming_request(ChatCompletionRequest::new(
+            "gpt-4.1-mini",
+            vec![ChatMessage::user("stream please")],
+        ))
+        .await
+        .unwrap();
+
+    let error = backend.send_prepared(&prepared).await.unwrap_err();
+
+    assert!(matches!(error, LlmError::InvalidRequest(_)));
+}
+
+#[cfg(feature = "openai-compat")]
+#[tokio::test]
+async fn stream_sender_rejects_non_stream_prepared_requests() {
+    let server = MockServer::start().await;
+    let backend = openai_backend(&server);
+    let prepared = backend
+        .prepared_request(ChatCompletionRequest::new(
+            "gpt-4.1-mini",
+            vec![ChatMessage::user("hello")],
+        ))
+        .await
+        .unwrap();
+
+    let error = match backend.send_prepared_stream(&prepared).await {
+        Ok(_) => panic!("stream sender should reject non-stream prepared requests"),
+        Err(error) => error,
+    };
+
+    assert!(matches!(error, LlmError::InvalidRequest(_)));
+}
+
+#[cfg(feature = "openai-compat")]
+#[tokio::test]
+async fn openai_compat_adapter_leaves_unknown_cache_usage_empty() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "chatcmpl-4",
+            "object": "chat.completion",
+            "created": 1,
+            "model": "gpt-4.1-mini",
+            "choices": [
+                {
+                    "index": 0,
+                    "finish_reason": "stop",
+                    "message": {
+                        "role": "assistant",
+                        "content": "hello"
+                    }
+                }
+            ],
+            "usage": {
+                "completion_tokens": 1,
+                "prompt_tokens": 2,
+                "total_tokens": 3
+            }
+        })))
+        .mount(&server)
+        .await;
+
+    let backend = openai_backend(&server);
+    let response = backend
+        .create_chat_completion(ChatCompletionRequest::new(
+            "gpt-4.1-mini",
+            vec![ChatMessage::user("hello")],
+        ))
+        .await
+        .unwrap();
+
+    let usage = response.usage.expect("usage should be present");
+    assert_eq!(usage.prompt_cache_hit_tokens, None);
+    assert_eq!(usage.prompt_cache_miss_tokens, None);
+}
+
+#[cfg(feature = "openai-compat")]
+#[tokio::test]
+async fn openai_compat_adapter_maps_streaming_tool_call_deltas() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_raw(
+                    concat!(
+                        "data: {\"id\":\"chatcmpl-tool-2\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"gpt-4.1-mini\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"type\":\"function\",\"function\":{\"name\":\"lookup_weather\",\"arguments\":\"\"}}]}}]}\n\n",
+                        "data: {\"id\":\"chatcmpl-tool-2\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"gpt-4.1-mini\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"{\\\"city\\\":\\\"Shanghai\\\"}\"}}]},\"finish_reason\":\"tool_calls\"}]}\n\n",
+                        "data: [DONE]\n\n"
+                    ),
+                    "text/event-stream",
+                ),
+        )
+        .mount(&server)
+        .await;
+
+    let backend = openai_backend(&server);
+    let mut stream = backend
+        .stream_chat_completion(ChatCompletionRequest::new(
+            "gpt-4.1-mini",
+            vec![ChatMessage::user("use tools")],
+        ))
+        .await
+        .unwrap();
+
+    let first = stream.next().await.unwrap().unwrap();
+    let second = stream.next().await.unwrap().unwrap();
+
+    let first_function = &first.choices[0].delta.tool_calls.as_ref().unwrap()[0]
+        .function
+        .as_ref()
+        .unwrap();
+    assert_eq!(first_function.name.as_deref(), Some("lookup_weather"));
+    assert_eq!(first_function.arguments.as_deref(), Some(""));
+
+    let second_function = &second.choices[0].delta.tool_calls.as_ref().unwrap()[0]
+        .function
+        .as_ref()
+        .unwrap();
+    assert_eq!(second_function.name, None);
+    assert_eq!(
+        second_function.arguments.as_deref(),
+        Some("{\"city\":\"Shanghai\"}")
+    );
+}
+
+// --- Cross-backend tests ---
+
+#[cfg(all(feature = "deepseek", feature = "openai-compat"))]
+#[tokio::test]
+async fn prepared_requests_reject_cross_backend_execution() {
+    let server = MockServer::start().await;
+    let deepseek = deepseek_backend(&server);
+    let openai = openai_backend(&server);
+    let prepared = deepseek
+        .prepared_request(ChatCompletionRequest::new(
+            "deepseek-v4-pro",
+            vec![ChatMessage::user("cross backend")],
+        ))
+        .await
+        .unwrap();
+
+    let error = openai.send_prepared(&prepared).await.unwrap_err();
+
+    assert!(matches!(error, LlmError::InvalidRequest(_)));
+}
+
+// --- Provider-agnostic tests ---
+
+#[test]
+fn prepared_requests_reject_invalid_deserialization_payloads() {
+    let error = serde_json::from_str::<just_llm_client::types::prepared::PreparedChatRequest>(
+        r#"{"backend_id":"openai-compatible","request_body":{"model":"gpt-4.1-mini"}}"#,
+    )
+    .unwrap_err();
+
+    assert!(error.to_string().contains("messages array"));
+}
+
+#[test]
+fn token_estimate_can_be_derived_from_provider_usage() {
+    let estimate = just_llm_client::types::token::TokenEstimate::from_usage(
+        &Usage {
+            completion_tokens: 12,
+            prompt_tokens: 34,
+            prompt_cache_hit_tokens: None,
+            prompt_cache_miss_tokens: None,
+            total_tokens: 46,
+            completion_tokens_details: None,
+        },
+        "provider-usage",
+    );
+
+    assert_eq!(estimate.prompt_tokens, 34);
+    assert_eq!(estimate.total_tokens, Some(46));
+    assert_eq!(estimate.kind, TokenEstimateKind::ProviderReported);
+    assert_eq!(estimate.source.as_deref(), Some("provider-usage"));
+}
