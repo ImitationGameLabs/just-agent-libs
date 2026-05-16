@@ -23,6 +23,9 @@ craneLib.devShell {
     # TOML toolkit (linter, formatter)
     taplo
 
+    # Sandboxing tools
+    bubblewrap
+
     # Temporary workaround for copilot-cli direnv integration bug
     # See: https://github.com/github/copilot-cli/issues/731
     # TODO: Remove once the upstream issue is resolved
