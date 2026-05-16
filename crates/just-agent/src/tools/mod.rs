@@ -1,0 +1,24 @@
+use std::sync::Arc;
+
+use anyhow::Result;
+use just_llm_client::ToolDispatcher;
+use just_llm_client::tools::shell::{PtyBackend, shell_tool_set};
+use tokio::sync::Mutex;
+
+/// Builds the tool registry exposed by `just-agent`.
+///
+/// Spawns bash via [`PtyBackend`], preserving full shell session state.
+/// The shell's working directory is the process current directory (set by
+/// the caller via `std::env::set_current_dir`).
+pub async fn build_tool_dispatch() -> Result<ToolDispatcher> {
+    let backend = PtyBackend::new("main").await?;
+    let backend = Arc::new(Mutex::new(backend));
+    let tools = shell_tool_set(backend);
+
+    let mut dispatch = ToolDispatcher::new();
+    for tool in tools {
+        dispatch.add_tool(tool)?;
+    }
+
+    Ok(dispatch)
+}

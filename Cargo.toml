@@ -4,6 +4,7 @@ members = [
   "crates/just-common",
   "crates/providers/just-deepseek",
   "crates/providers/just-openai-compat",
+  "crates/just-agent",
 ]
 
 resolver = "3"
@@ -43,3 +44,4 @@ tokenx-rs = "0.1.0"
 rable = "0.2.0"
 wiremock = "0.6.5"
 strip-ansi-escapes = "0.2.1"
+clap = { version = "4.6", features = ["derive", "env"] }
