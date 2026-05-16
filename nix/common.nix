@@ -59,10 +59,11 @@ let
   # Library-only crates (only needed for fileset dependencies, not built separately)
   # Add your library crates here
   libraryCratePaths = mapToAbsolute {
-    just-llm-client = "crates/just-llm-client";
+    just-common = "crates/just-common";
     just-deepseek = "crates/providers/just-deepseek";
-    just-core = "crates/just-core";
     just-openai-compat = "crates/providers/just-openai-compat";
+    just-llm-client = "crates/just-llm-client";
+    just-agent = "crates/just-agent";
   };
 in
 {
