@@ -11,6 +11,7 @@ A lightweight, provider-neutral abstraction that sits on top of the provider SDK
 - **Capability-oriented traits.** Each operation is its own trait — `ChatCompletion`, `StreamingChatCompletion`, `ModelCatalog`, `Balance`, `TokenEstimation`. Backends implement only what they support.
 - **Explicit capability negotiation.** Optional capabilities are requested upfront — unsupported backends fail immediately, not at call time.
 - **Prepared requests.** Build, inspect, estimate token usage, then execute.
+- **Optional tool runtime.** Enable `tools` for the local executable-tool runtime plus the built-in PTY-backed shell/session tools that compose into tool-calling loops.
 ```rust
 use just_llm_client::{
     ChatCompletion, provider::DeepSeekBackend,
@@ -25,6 +26,17 @@ let response = backend.create_chat_completion(
     ),
 ).await?;
 ```
+
+When you want reusable local tools next to the client layer:
+
+```toml
+just-llm-client = { version = "...", features = ["openai-compat", "tools"] }
+```
+
+The workspace also includes a deliberately tiny reference binary, `just-agent`, that wires
+`ProviderRegistry` to a modular shell-oriented tool set and runs a basic tool-calling loop with a
+small built-in policy gate. It also performs conservative pre-turn context compaction, keeping
+recent turns verbatim and summarizing older history when the conversation grows too large.
 
 #### Bring your own backend
 
@@ -84,7 +96,7 @@ let response = client.create_chat_completion(
 
 ## Documentation
 
-- [Provider-neutral client](docs/usage/provider-neutral-client.md) — capability model, initialization styles, and prepared requests
+- [just-llm-client](docs/usage/just-llm-client.md) — capability model, initialization styles, and prepared requests
 - [Provider-specific clients](docs/usage/provider-specific-clients.md) — direct SDK usage, streaming, and environment variables
 
 ## Quick start
@@ -94,7 +106,14 @@ let response = client.create_chat_completion(
 cargo run -p just-llm-client --example deepseek_simple_chat
 cargo run -p just-llm-client --example openai_compat_simple_chat
 cargo run -p just-llm-client --example runtime_selected_provider
-cargo run -p just-llm-client --example initialization_styles
+
+# Minimal reference agent (requires JUST_LLM_* env vars)
+# Exposes shell_session_* tools with lightweight approval gating
+# Optional compaction tuning:
+# JUST_AGENT_COMPACT_TRIGGER_TOKENS=12000
+# JUST_AGENT_COMPACT_KEEP_RECENT_TOKENS=4000
+# JUST_AGENT_COMPACT_MAX_TOKENS=1200
+cargo run -p just-agent --example run-agent-with-prompt -- --workspace=. -- --prompt "Show the current working directory."
 
 # Provider-specific SDK examples
 cargo run -p just-deepseek --example deepseek_chat_completion

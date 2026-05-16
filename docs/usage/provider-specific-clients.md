@@ -8,7 +8,7 @@ The workspace includes two concrete provider SDK crates:
 Use these crates when you already know the target provider family and want direct access to its
 wire-level request and response types.
 
-If you want a provider-neutral abstraction instead, see [Provider-neutral client](provider-neutral-client.md).
+If you want a provider-neutral abstraction instead, see [just-llm-client](just-llm-client.md).
 If you want `just-llm-client`'s normalized types but do not need runtime provider selection, use the direct
 backend examples in the `just-llm-client` crate instead of these provider clients.
 

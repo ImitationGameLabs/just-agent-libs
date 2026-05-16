@@ -47,10 +47,6 @@ The workspace supports two complementary initialization styles:
 | Direct backend construction | You already know the provider family in code and want the shortest path from config to normalized client requests | You write separate setup code per provider family                                                                        |
 | `ProviderRegistry`          | Provider choice is configuration-driven and you want one runtime-selected entry point                             | You register configured providers programmatically, then derive `ChatClient`s with explicit model/system-prompt defaults |
 
-The runnable comparison lives in:
-
-- `cargo run -p just-llm-client --example initialization_styles`
-
 That example defines:
 
 - `build_direct_openai_backend()` for the concrete path
@@ -120,19 +116,69 @@ threads/process boundaries; execution happens explicitly through a backend or cl
 Streaming follows the same shape through `StreamingChatCompletion`:
 direct streaming, `prepared_streaming_request(...)`, and `send_prepared_stream(...)`.
 
+## Optional local tools
+
+`just-llm-client` keeps request/response tool DTOs in the core crate, and exposes application-side
+tool execution as an opt-in runtime:
+
+- `tools` — object-safe `LlmTool` trait plus `ToolDispatcher`, together with the built-in
+  PTY-backed shell/session tools, for turning local tools into `ToolDefinition` values and
+  dispatching tool calls by name
+
+Example dependency:
+
+```toml
+just-llm-client = { version = "...", features = ["openai-compat", "tools"] }
+```
+
+Example composition:
+
+```rust,ignore
+use std::sync::Arc;
+
+use just_llm_client::{
+    ToolDispatcher,
+    tools::shell::{PtyBackend, shell_tool_set},
+};
+use tokio::sync::Mutex;
+
+let backend = Arc::new(Mutex::new(PtyBackend::new("main").await?));
+let mut tools = ToolDispatcher::new();
+tools.add_tools(shell_tool_set(backend))?;
+
+let tool_definitions = tools.tool_definitions();
+```
+
+That lets you keep the provider-neutral request/response flow in `just-llm-client`, while opting
+into a small reusable tool runtime only when your application needs it.
+
+For a complete but intentionally tiny reference, the workspace also ships `just-agent`, a binary
+crate that:
+
+- creates a `ChatClient` from the same `JUST_LLM_*` environment variables used by the examples
+- registers a modular shell tool surface built around `shell_session_*` tools
+- applies a small policy/approval gate before tool execution
+- compacts older conversation context before a turn when the running history grows too large
+- loops on tool calls until the model returns a final answer
+
+Run it with:
+
+```bash
+cargo run -p just-agent --example run-agent-with-prompt -- --workspace=. -- --prompt "Show the current working directory."
+```
+
 ## Runtime-selected provider example
 
 The workspace also includes:
 
 - `cargo run -p just-llm-client --example runtime_selected_provider`
 - `cargo run -p just-llm-client --example deepseek_simple_chat`
-- `cargo run -p just-llm-client --example openai_compat_backend`
+- `cargo run -p just-llm-client --example openai_compat_simple_chat`
 
 Those examples are intentionally complementary:
 
 - `deepseek_simple_chat` / `openai_compat_simple_chat` show the lowest-noise concrete path into the `just-llm-client` layer
 - `runtime_selected_provider` shows the shared registry-backed path
-- `initialization_styles` puts both approaches side by side for ergonomic comparison
 
 ## Capability negotiation
 
