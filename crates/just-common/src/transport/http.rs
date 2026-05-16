@@ -98,5 +98,9 @@ pub async fn ensure_success(response: Response) -> Result<Response, TransportErr
 
 /// Joins a base URL and endpoint path without duplicating slashes.
 pub fn endpoint_url(base_url: &str, path: &str) -> String {
-    format!("{}/{}", base_url, path.trim_start_matches('/'))
+    format!(
+        "{}/{}",
+        base_url.trim_end_matches('/'),
+        path.trim_start_matches('/')
+    )
 }
