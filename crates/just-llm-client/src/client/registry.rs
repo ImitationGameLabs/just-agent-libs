@@ -31,6 +31,7 @@ impl StoredProvider {
 /// `"deepseek-local"`. The first call to [`chat`](ProviderRegistry::chat) lazily connects a shared
 /// backend for that entry; later calls reuse the same backend while creating fresh
 /// [`ChatClient`] wrappers with per-call defaults.
+#[derive(Default)]
 pub struct ProviderRegistry {
     providers: Vec<StoredProvider>,
 }
@@ -100,11 +101,5 @@ impl ProviderRegistry {
     /// Returns the identifiers of all registered provider entries.
     pub fn provider_ids(&self) -> impl Iterator<Item = &str> {
         self.providers.iter().map(StoredProvider::id)
-    }
-}
-
-impl Default for ProviderRegistry {
-    fn default() -> Self {
-        Self::new()
     }
 }
