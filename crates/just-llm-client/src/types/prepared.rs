@@ -81,7 +81,6 @@ impl PreparedChatRequest {
             .unwrap_or(false)
     }
 
-    /// Returns the canonical request body used internally for execution.
     /// Returns the canonical request body for execution by a backend.
     pub fn request_body(&self) -> &Value {
         &self.request_body

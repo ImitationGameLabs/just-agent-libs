@@ -6,20 +6,30 @@ license.workspace = true
 
 [features]
 default = ["deepseek", "openai-compat"]
-deepseek = ["dep:just-deepseek"]
-openai-compat = ["dep:just-openai-compat"]
+deepseek = ["dep:just-deepseek", "dep:tokenx-rs"]
+openai-compat = ["dep:just-openai-compat", "dep:tokenx-rs"]
+tools = ["dep:anyhow", "dep:regex", "dep:portable-pty", "dep:strip-ansi-escapes", "dep:tokio"]
 
 [dependencies]
+anyhow = { workspace = true, optional = true }
 async-trait = { workspace = true }
 just-common = { workspace = true }
 just-deepseek = { workspace = true, optional = true }
 futures-core = { workspace = true }
 futures-util = { workspace = true }
 just-openai-compat = { workspace = true, optional = true }
+regex = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
-tokenx-rs = { workspace = true }
+portable-pty = { workspace = true, optional = true }
+strip-ansi-escapes = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true, features = [
+  "process",
+  "sync",
+  "time",
+] }
+tokenx-rs = { workspace = true, optional = true }
 
 [dev-dependencies]
 dotenvy = { workspace = true }
