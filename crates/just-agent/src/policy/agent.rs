@@ -38,8 +38,12 @@ impl AgentPolicy {
             "shell_session_restart" => self.evaluate_session_restart(args_json),
             "shell_session_kill" => self.evaluate_session_kill(args_json),
             "shell_session_exec" => self.evaluate_session_exec(args_json),
-            _ => Ok(ToolDecision::Deny {
-                reason: format!("tool '{tool_name}' is not allowed by the current policy"),
+            "context_pin" | "context_unpin" | "context_status" | "context_evict" | "skill_load" => {
+                Ok(ToolDecision::Allow)
+            }
+            _ => Ok(ToolDecision::Ask {
+                reason: format!("tool '{tool_name}' requires approval"),
+                dangerous: false,
             }),
         }
     }
@@ -68,6 +72,7 @@ impl AgentPolicy {
                 "restarting shell session '{}' discards its current state",
                 args.name
             ),
+            dangerous: false,
         })
     }
 
@@ -84,6 +89,7 @@ impl AgentPolicy {
                 "killing shell session '{}' terminates running processes",
                 args.name
             ),
+            dangerous: false,
         })
     }
 

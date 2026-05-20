@@ -11,15 +11,18 @@ use std::process::Command;
 ///
 /// Exits the process with the child's exit code.
 pub fn run(bin: &Path, workspace: &Path, extra_args: &[String]) -> ! {
+    let data_dir = workspace.join(".draft");
+    std::fs::create_dir_all(&data_dir).ok();
+
     if cfg!(target_os = "linux") {
         if which("bwrap") {
-            run_bwrap(bin, workspace, extra_args);
+            run_bwrap(bin, workspace, &data_dir, extra_args);
         } else {
             die("bwrap not found — install bubblewrap or pass --no-sandbox to skip sandboxing");
         }
     } else if cfg!(target_os = "macos") {
         if which("sandbox-exec") {
-            run_seatbelt(bin, workspace, extra_args);
+            run_seatbelt(bin, workspace, &data_dir, extra_args);
         } else {
             die("sandbox-exec (Seatbelt) not found — pass --no-sandbox to skip sandboxing");
         }
@@ -44,7 +47,7 @@ fn which(name: &str) -> bool {
         .unwrap_or(false)
 }
 
-fn run_bwrap(bin: &Path, workspace: &Path, extra_args: &[String]) -> ! {
+fn run_bwrap(bin: &Path, workspace: &Path, data_dir: &Path, extra_args: &[String]) -> ! {
     let ws_str = workspace
         .to_str()
         .unwrap_or_else(|| die("workspace path is not valid UTF-8"));
@@ -75,6 +78,7 @@ fn run_bwrap(bin: &Path, workspace: &Path, extra_args: &[String]) -> ! {
             "--chdir",
             ws_str,
         ])
+        .env("JUST_AGENT_DATA_DIR", data_dir)
         .arg(bin)
         .args(extra_args)
         .status()
@@ -83,7 +87,7 @@ fn run_bwrap(bin: &Path, workspace: &Path, extra_args: &[String]) -> ! {
     std::process::exit(status.code().unwrap_or(1))
 }
 
-fn run_seatbelt(bin: &Path, workspace: &Path, extra_args: &[String]) -> ! {
+fn run_seatbelt(bin: &Path, workspace: &Path, data_dir: &Path, extra_args: &[String]) -> ! {
     let ws_str = workspace
         .to_str()
         .unwrap_or_else(|| die("workspace path is not valid UTF-8"));
@@ -112,6 +116,7 @@ fn run_seatbelt(bin: &Path, workspace: &Path, extra_args: &[String]) -> ! {
 
     let status = Command::new("sandbox-exec")
         .args(["-p", &policy, "--"])
+        .env("JUST_AGENT_DATA_DIR", data_dir)
         .arg(bin)
         .args(extra_args)
         .status()

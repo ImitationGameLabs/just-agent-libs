@@ -52,8 +52,9 @@ fn classify_node(node: &Node) -> ToolDecision {
         // --- Pipeline ---
         NodeKind::Pipeline { commands, .. } => {
             if helpers::is_download_to_shell(commands) {
-                return ToolDecision::Deny {
-                    reason: "downloading and executing remote scripts is not allowed".into(),
+                return ToolDecision::Ask {
+                    reason: "downloading and executing remote scripts".into(),
+                    dangerous: true,
                 };
             }
             let sub = commands
@@ -61,7 +62,10 @@ fn classify_node(node: &Node) -> ToolDecision {
                 .map(classify_node)
                 .fold(ToolDecision::Allow, helpers::stricter);
             helpers::stricter(
-                ToolDecision::Ask { reason: "piped shell commands require approval".into() },
+                ToolDecision::Ask {
+                    reason: "piped shell commands require approval".into(),
+                    dangerous: false,
+                },
                 sub,
             )
         }
@@ -73,7 +77,10 @@ fn classify_node(node: &Node) -> ToolDecision {
                 .map(|item| classify_node(&item.command))
                 .fold(ToolDecision::Allow, helpers::stricter);
             helpers::stricter(
-                ToolDecision::Ask { reason: "compound shell commands require approval".into() },
+                ToolDecision::Ask {
+                    reason: "compound shell commands require approval".into(),
+                    dangerous: false,
+                },
                 sub,
             )
         }
@@ -118,7 +125,10 @@ fn classify_node(node: &Node) -> ToolDecision {
 
         // --- Function ---
         NodeKind::Function { body, .. } => helpers::stricter(
-            ToolDecision::Ask { reason: "function definition requires approval".into() },
+            ToolDecision::Ask {
+                reason: "function definition requires approval".into(),
+                dangerous: false,
+            },
             classify_node(body),
         ),
 
@@ -130,13 +140,16 @@ fn classify_node(node: &Node) -> ToolDecision {
         // --- Redirects ---
         NodeKind::Redirect { .. } => helpers::classify_redirect_node(node),
         NodeKind::HereDoc { .. } => {
-            ToolDecision::Ask { reason: "heredocs require approval".into() }
+            ToolDecision::Ask { reason: "heredocs require approval".into(), dangerous: false }
         }
 
         // --- Substitutions ---
         NodeKind::CommandSubstitution { command, .. } => classify_node(command),
         NodeKind::ProcessSubstitution { command, .. } => helpers::stricter(
-            ToolDecision::Ask { reason: "process substitution requires approval".into() },
+            ToolDecision::Ask {
+                reason: "process substitution requires approval".into(),
+                dangerous: false,
+            },
             classify_node(command),
         ),
 
@@ -159,6 +172,7 @@ fn classify_node(node: &Node) -> ToolDecision {
 
         NodeKind::ParamIndirect { .. } => ToolDecision::Ask {
             reason: "indirect parameter expansion cannot be statically resolved".into(),
+            dangerous: false,
         },
 
         // --- Arithmetic command ---
@@ -176,7 +190,7 @@ fn classify_node(node: &Node) -> ToolDecision {
 
         // --- Coproc ---
         NodeKind::Coproc { command, .. } => helpers::stricter(
-            ToolDecision::Ask { reason: "coproc requires approval".into() },
+            ToolDecision::Ask { reason: "coproc requires approval".into(), dangerous: false },
             classify_node(command),
         ),
 
@@ -262,6 +276,7 @@ fn classify_simple_command(
                 ToolDecision::Ask {
                     reason: "command name contains expansions and cannot be statically classified"
                         .into(),
+                    dangerous: false,
                 },
                 word_dec,
             );
@@ -273,12 +288,15 @@ fn classify_simple_command(
         return decision;
     }
 
-    // 2. Deny list
-    if lists::DENY_COMMANDS.contains(&cmd_name.as_str()) {
-        return ToolDecision::Deny { reason: format!("'{cmd_name}' is on the deny list") };
+    // 2. Dangerous command list
+    if lists::DANGEROUS_COMMANDS.contains(&cmd_name.as_str()) {
+        return ToolDecision::Ask {
+            reason: format!("'{cmd_name}' is a dangerous command"),
+            dangerous: true,
+        };
     }
 
-    // 3. Argument-aware deny
+    // 3. Argument-aware dangerous check
     if let Some(decision) = lists::check_dangerous_invocation(&cmd_name, words) {
         return decision;
     }

@@ -12,8 +12,16 @@ pub(super) fn stricter(a: ToolDecision, b: ToolDecision) -> ToolDecision {
         (ToolDecision::Deny { reason }, _) | (_, ToolDecision::Deny { reason }) => {
             ToolDecision::Deny { reason }
         }
-        (ToolDecision::Ask { reason }, _) | (_, ToolDecision::Ask { reason }) => {
-            ToolDecision::Ask { reason }
+        (
+            ToolDecision::Ask { reason: ra, dangerous: da },
+            ToolDecision::Ask { reason: rb, dangerous: db },
+        ) => {
+            let reason = if ra.len() >= rb.len() { ra } else { rb };
+            ToolDecision::Ask { reason, dangerous: da || db }
+        }
+        (ToolDecision::Ask { reason, dangerous }, ToolDecision::Allow)
+        | (ToolDecision::Allow, ToolDecision::Ask { reason, dangerous }) => {
+            ToolDecision::Ask { reason, dangerous }
         }
         (ToolDecision::Allow, ToolDecision::Allow) => ToolDecision::Allow,
     }
@@ -51,17 +59,19 @@ pub(super) fn classify_redirect_node(node: &Node) -> ToolDecision {
         NodeKind::Redirect { op, target, .. } => {
             let op_dec = match op.as_str() {
                 "<" => ToolDecision::Allow,
-                ">" | ">>" | ">|" | "<>" | "&>" | "&>>" => {
-                    ToolDecision::Ask { reason: "shell redirection may modify files".into() }
-                }
+                ">" | ">>" | ">|" | "<>" | "&>" | "&>>" => ToolDecision::Ask {
+                    reason: "shell redirection may modify files".into(),
+                    dangerous: false,
+                },
                 _ => ToolDecision::Ask {
                     reason: format!("redirect operator '{op}' requires approval"),
+                    dangerous: false,
                 },
             };
             stricter(op_dec, super::walker::classify_node_ref(target))
         }
         NodeKind::HereDoc { .. } => {
-            ToolDecision::Ask { reason: "heredocs require approval".into() }
+            ToolDecision::Ask { reason: "heredocs require approval".into(), dangerous: false }
         }
         _ => super::walker::classify_node_ref(node),
     }
@@ -100,6 +110,7 @@ fn check_assignment_name(assignment: &Node) -> ToolDecision {
     {
         return ToolDecision::Ask {
             reason: format!("assignment to '{name}' can affect security-critical behavior"),
+            dangerous: false,
         };
     }
     ToolDecision::Allow

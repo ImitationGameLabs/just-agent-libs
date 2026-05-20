@@ -1,28 +1,27 @@
 mod agent;
+mod approval;
 mod classifier;
 mod executor;
 
+/// User response to a tool approval prompt.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ApprovalDecision {
+    Allow,
+    AlwaysAllow,
+    Deny,
+}
+
 /// Authorization decision for a tool invocation.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum ToolDecision {
     Allow,
-    Ask { reason: String },
+    Ask { reason: String, dangerous: bool },
     Deny { reason: String },
 }
 
 pub use agent::AgentPolicy;
+pub use approval::{
+    ApprovalProvider, ApprovalRequest, ChannelApprovalProvider, StdinApprovalProvider,
+};
 pub use executor::AuthorizedToolExecutor;
-
-/// Commands allowed in test mode for exercising shell tools.
-///
-/// These supplement the allowlist with commands that
-/// change lightweight state (cwd, temp dirs) needed by the integration-test
-/// example.  Deny-list checks are still enforced even in test mode.
-#[allow(dead_code)]
-pub(crate) const TEST_SAFE_COMMANDS: &[&str] = &[
-    "cd",    // test session cwd changes
-    "mkdir", // test directory creation
-    "touch", // test file creation
-    "rmdir", // cleanup empty dirs
-    "sleep", // test timeout / background mode
-];

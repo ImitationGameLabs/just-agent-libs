@@ -16,7 +16,7 @@ pub(super) const EVAL_COMMANDS: &[&str] = &["eval", "exec", "source", "."];
 
 pub(super) const COMMAND_STRING_FLAGS: &[&str] = &["-c"];
 
-pub(super) const DENY_COMMANDS: &[&str] = &[
+pub(super) const DANGEROUS_COMMANDS: &[&str] = &[
     // Privilege escalation
     "sudo",
     "su",
@@ -77,17 +77,20 @@ const ALLOW_READONLY: &[&str] = &[
 pub(super) fn check_dangerous_invocation(cmd_name: &str, words: &[Node]) -> Option<ToolDecision> {
     match cmd_name {
         "rm" if util::has_any_flag(words, &["-r", "-rf", "-fr", "-R", "-rRf"]) => {
-            Some(ToolDecision::Ask { reason: "rm with recursive/force flags".into() })
+            Some(ToolDecision::Ask {
+                reason: "rm with recursive/force flags".into(),
+                dangerous: true,
+            })
         }
         "chmod" if util::has_any_flag(words, &["777"]) => {
-            Some(ToolDecision::Ask { reason: "chmod 777".into() })
+            Some(ToolDecision::Ask { reason: "chmod 777".into(), dangerous: true })
         }
         "git"
             if util::has_subcommand_and_flag(words, "reset", "--hard")
                 || util::has_subcommand_and_flag(words, "reset", "--keep")
                 || util::has_subcommand_and_flag(words, "clean", "-fd") =>
         {
-            Some(ToolDecision::Ask { reason: "destructive git operation".into() })
+            Some(ToolDecision::Ask { reason: "destructive git operation".into(), dangerous: true })
         }
         _ => None,
     }
@@ -98,5 +101,8 @@ pub(super) fn check_allow_list(cmd_name: &str, _words: &[Node]) -> ToolDecision 
         return ToolDecision::Allow;
     }
 
-    ToolDecision::Ask { reason: "command is not on the low-risk allowlist".into() }
+    ToolDecision::Ask {
+        reason: "command is not on the low-risk allowlist".into(),
+        dangerous: false,
+    }
 }

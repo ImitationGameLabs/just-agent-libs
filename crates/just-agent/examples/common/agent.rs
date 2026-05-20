@@ -4,7 +4,9 @@ use std::env;
 use std::path::PathBuf;
 use std::process::Command;
 
-/// Ensure the just-agent binary exists, building it with cargo if necessary.
+/// Build just-agent and return the binary path.
+///
+/// Always runs `cargo build` to ensure the binary is up-to-date.
 pub fn ensure_agent_bin() -> PathBuf {
     let exe =
         env::current_exe().unwrap_or_else(|e| fail(&format!("cannot determine current exe: {e}")));
@@ -12,13 +14,9 @@ pub fn ensure_agent_bin() -> PathBuf {
     let bin_path = exe
         .parent()
         .and_then(|p| p.parent())
-        .map(|p| p.join("just-agent"));
+        .map(|p| p.join("just-agent"))
+        .unwrap_or_else(|| fail("unexpected binary layout"));
 
-    if let Some(path) = bin_path.as_ref().filter(|p| p.is_file()) {
-        return path.clone();
-    }
-
-    eprintln!("[sandbox] just-agent binary not found, building with cargo...");
     let status = Command::new("cargo")
         .args(["build", "-p", "just-agent"])
         .status()
@@ -27,9 +25,7 @@ pub fn ensure_agent_bin() -> PathBuf {
         fail("cargo build -p just-agent failed");
     }
 
-    bin_path
-        .filter(|p| p.is_file())
-        .unwrap_or_else(|| fail("just-agent binary still not found after build"))
+    if bin_path.is_file() { bin_path } else { fail("just-agent binary not found after build") }
 }
 
 fn fail(msg: &str) -> ! {

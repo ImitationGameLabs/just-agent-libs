@@ -61,8 +61,12 @@ fn main() {
     let just_agent_bin = agent::ensure_agent_bin();
 
     if cli.no_sandbox {
+        let data_dir = workspace.join(".draft");
+        std::fs::create_dir_all(&data_dir).ok();
+
         let status = std::process::Command::new(&just_agent_bin)
             .current_dir(&workspace)
+            .env("JUST_AGENT_DATA_DIR", &data_dir)
             .args(&cli.args)
             .status()
             .unwrap_or_else(|e| sandbox::die(&format!("failed to spawn binary: {e}")));

@@ -32,10 +32,12 @@ pub fn client_from_env(system_prompt: &str) -> Result<ChatClient> {
         _ => bail!("unsupported JUST_LLM_PROVIDER: {provider_id}"),
     }
 
-    Ok(registry.chat(
-        &provider_id,
-        ChatClientOptions::new(model).with_system_prompt(system_prompt),
-    )?)
+    registry
+        .chat(
+            &provider_id,
+            ChatClientOptions::new(model).with_system_prompt(system_prompt),
+        )
+        .context("failed to create chat client")
 }
 
 fn expect_env(name: &str) -> Result<String> {

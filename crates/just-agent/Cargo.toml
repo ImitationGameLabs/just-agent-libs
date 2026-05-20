@@ -14,9 +14,17 @@ serde_json = { workspace = true }
 rable = { workspace = true }
 tokio = { workspace = true }
 clap = { workspace = true }
+dirs = { workspace = true }
+ratatui = { workspace = true }
+ratatui-textarea = { workspace = true }
+pulldown-cmark = { workspace = true }
+comfy-table = { workspace = true }
+syntect = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
 
 [dev-dependencies]
 dotenvy = { workspace = true }
-[[example]]
 
+[[example]]
 name = "run-agent-with-prompt"
