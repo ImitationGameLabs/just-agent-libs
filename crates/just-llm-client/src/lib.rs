@@ -60,6 +60,7 @@ pub use capability::{
 };
 pub use error::{Capability, LlmError};
 pub use just_common::error::TransportError;
+pub use just_common::transport::sse::JsonEventStream;
 pub use provider::LlmBackend;
 pub use provider::validation::{
     into_validated_streaming_request, validate_common_request, validate_non_streaming_request,
