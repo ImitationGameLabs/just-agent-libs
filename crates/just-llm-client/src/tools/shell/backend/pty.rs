@@ -89,27 +89,201 @@ impl PtySession {
 }
 
 // ---------------------------------------------------------------------------
-// CommandConfig
+// PtyBuilder
 // ---------------------------------------------------------------------------
 
-/// Configuration for the command [`PtyBackend`] spawns inside the PTY.
+// Default values matching previous hardcoded constants.
+const DEFAULT_ROWS: u16 = 24;
+const DEFAULT_COLS: u16 = 500;
+const DEFAULT_SCROLLBACK_LINES: usize = 10_000;
+const DEFAULT_POLL_INTERVAL: Duration = Duration::from_millis(100);
+const DEFAULT_STABILITY_THRESHOLD: usize = 3;
+const DEFAULT_FALLBACK_CWD: &str = "/tmp";
+const DEFAULT_FALLBACK_SHELL: &str = "/bin/bash";
+
+/// Builder for [`PtyBackend`].
 ///
-/// By default PtyBackend spawns `bash --login`. A custom `CommandConfig` lets
-/// callers wrap the shell in a sandbox (e.g. `bwrap ... bash` on Linux or
-/// `sandbox-exec ... bash` on macOS) without modifying PtyBackend itself.
+/// Construct with [`PtyBuilder::new`], chain setter methods to override
+/// defaults, then call [`build`](PtyBuilder::build) to create the backend.
+///
+/// # Defaults
+///
+/// | Field                 | Default        | Effect                                                              |
+/// |-----------------------|----------------|---------------------------------------------------------------------|
+/// | `argv`                | `["bash"]`    | Program (and args) spawned inside the PTY                           |
+/// | `login_shell`         | `true`         | Appends `--login` (or `--noprofile --norc` in clean-env) to argv    |
+/// | `rows`                | `24`           | PTY terminal height in rows                                         |
+/// | `cols`                | `500`          | PTY terminal width in columns — wide to avoid line wrapping         |
+/// | `scrollback_lines`    | `10_000`       | Max lines retained per session in memory                            |
+/// | `poll_interval`       | `100 ms`       | Sleep between output-polling reads; lower = faster, more CPU        |
+/// | `stability_threshold` | `3`            | Consecutive identical reads before output is considered stable       |
+/// | `fallback_cwd`        | `"/tmp"`      | Working dir when caller provides none and `current_dir()` fails     |
+/// | `fallback_shell`      | `"/bin/bash"` | `$SHELL` in clean-env mode when the env var is unset                |
+///
+/// # Example
+///
+/// ```ignore
+/// use std::time::Duration;
+/// use just_llm_client::tools::shell::PtyBuilder;
+///
+/// let backend = PtyBuilder::new("main")
+///     .dimensions(40, 1000)
+///     .scrollback_lines(50_000)
+///     .poll_interval(Duration::from_millis(50))
+///     .build()
+///     .await?;
+/// ```
 #[derive(Clone, Debug)]
-pub struct CommandConfig {
-    /// Full argv vector. `argv[0]` is the program to execute.
-    pub argv: Vec<OsString>,
-    /// When `true` (default), PtyBackend appends `--login` (or `--noprofile
-    /// --norc` in clean-env mode) to the argv. Set to `false` when the wrapper
-    /// already includes shell flags (e.g. `bwrap ... -- bash --login`).
-    pub login_shell: bool,
+pub struct PtyBuilder {
+    default_session: String,
+    argv: Vec<OsString>,
+    login_shell: bool,
+    rows: u16,
+    cols: u16,
+    scrollback_lines: usize,
+    poll_interval: Duration,
+    stability_threshold: usize,
+    fallback_cwd: PathBuf,
+    fallback_shell: String,
 }
 
-impl Default for CommandConfig {
-    fn default() -> Self {
-        Self { argv: vec![OsString::from("bash")], login_shell: true }
+impl PtyBuilder {
+    /// Creates a builder whose initial session will be named `default_session`.
+    pub fn new(default_session: impl Into<String>) -> Self {
+        Self {
+            default_session: default_session.into(),
+            argv: vec![OsString::from("bash")],
+            login_shell: true,
+            rows: DEFAULT_ROWS,
+            cols: DEFAULT_COLS,
+            scrollback_lines: DEFAULT_SCROLLBACK_LINES,
+            poll_interval: DEFAULT_POLL_INTERVAL,
+            stability_threshold: DEFAULT_STABILITY_THRESHOLD,
+            fallback_cwd: PathBuf::from(DEFAULT_FALLBACK_CWD),
+            fallback_shell: DEFAULT_FALLBACK_SHELL.to_owned(),
+        }
+    }
+
+    /// Overrides the program argv. `argv[0]` is the executable path.
+    ///
+    /// Default: `["bash"]`.
+    pub fn argv(mut self, argv: Vec<OsString>) -> Self {
+        self.argv = argv;
+        self
+    }
+
+    /// Sets whether `--login` (or `--noprofile --norc` in clean-env mode) is
+    /// appended to the shell argv.
+    ///
+    /// Default: `true`.
+    pub fn login_shell(mut self, login: bool) -> Self {
+        self.login_shell = login;
+        self
+    }
+
+    /// Overrides the PTY terminal dimensions (rows x cols).
+    ///
+    /// Wider columns capture long lines without wrapping.
+    /// Default: `rows = 24`, `cols = 500`.
+    pub fn dimensions(mut self, rows: u16, cols: u16) -> Self {
+        self.rows = rows;
+        self.cols = cols;
+        self
+    }
+
+    /// Overrides the maximum number of scrollback lines retained per session.
+    ///
+    /// Higher values preserve more output at the cost of memory.
+    /// Default: `10_000`.
+    pub fn scrollback_lines(mut self, lines: usize) -> Self {
+        self.scrollback_lines = lines;
+        self
+    }
+
+    /// Overrides the sleep duration between output-polling reads.
+    ///
+    /// Lower values reduce latency at the cost of CPU usage.
+    /// Default: `100 ms`.
+    pub fn poll_interval(mut self, interval: Duration) -> Self {
+        self.poll_interval = interval;
+        self
+    }
+
+    /// Overrides the number of consecutive identical reads before output is
+    /// considered stable.
+    ///
+    /// Lower values make completion detection faster but more fragile.
+    /// Default: `3`.
+    pub fn stability_threshold(mut self, threshold: usize) -> Self {
+        self.stability_threshold = threshold;
+        self
+    }
+
+    /// Overrides the fallback working directory used when the caller provides
+    /// none and `std::env::current_dir()` fails.
+    ///
+    /// Default: `"/tmp"`.
+    pub fn fallback_cwd(mut self, cwd: impl Into<PathBuf>) -> Self {
+        self.fallback_cwd = cwd.into();
+        self
+    }
+
+    /// Overrides the fallback `$SHELL` value used in clean-env mode when the
+    /// `SHELL` environment variable is unset.
+    ///
+    /// Default: `"/bin/bash"`.
+    pub fn fallback_shell(mut self, shell: impl Into<String>) -> Self {
+        self.fallback_shell = shell.into();
+        self
+    }
+
+    /// Validates the builder state and constructs a [`PtyBackend`].
+    ///
+    /// Creates the initial session named by [`new`](Self::new).
+    pub async fn build(self) -> Result<PtyBackend, ShellError> {
+        self.validate()?;
+        let mut backend = PtyBackend {
+            sessions: HashMap::new(),
+            current_session: String::new(),
+            config: self,
+            next_sentinel: 0,
+        };
+        let name = backend.config.default_session.clone();
+        backend.create_session_internal(&name, None, false).await?;
+        backend.current_session = name;
+        Ok(backend)
+    }
+
+    /// Validates the configuration, returning an error if any field is invalid.
+    ///
+    /// These checks prevent values that would compile but cause subtle
+    /// runtime failures:
+    ///
+    /// - `poll_interval = 0` — busy-loop that pins a CPU core
+    /// - `scrollback_lines = 0` — all output silently discarded
+    /// - `stability_threshold = 0` — premature command-completion detection
+    /// - `rows = 0` / `cols = 0` — platform-dependent PTY misbehavior
+    /// - empty `argv` — undefined spawn behavior
+    pub fn validate(&self) -> Result<(), ShellError> {
+        if self.argv.is_empty() {
+            return Err(ShellError::backend("argv must not be empty"));
+        }
+        if self.rows == 0 {
+            return Err(ShellError::backend("rows must be > 0"));
+        }
+        if self.cols == 0 {
+            return Err(ShellError::backend("cols must be > 0"));
+        }
+        if self.scrollback_lines == 0 {
+            return Err(ShellError::backend("scrollback_lines must be > 0"));
+        }
+        if self.poll_interval.is_zero() {
+            return Err(ShellError::backend("poll_interval must be > 0"));
+        }
+        if self.stability_threshold == 0 {
+            return Err(ShellError::backend("stability_threshold must be > 0"));
+        }
+        Ok(())
     }
 }
 
@@ -124,7 +298,7 @@ impl Default for CommandConfig {
 pub struct PtyBackend {
     sessions: HashMap<String, PtySession>,
     current_session: String,
-    command_config: CommandConfig,
+    config: PtyBuilder,
     next_sentinel: u64,
 }
 
@@ -138,33 +312,6 @@ impl PtyBackend {
         let s = format!("{:08x}", self.next_sentinel);
         self.next_sentinel += 1;
         s
-    }
-
-    /// Creates a backend and ensures the default session exists.
-    pub async fn new(default_name: &str) -> Result<Self, ShellError> {
-        Self::with_command(default_name, CommandConfig::default()).await
-    }
-
-    /// Creates a backend with a custom [`CommandConfig`] for the spawned process.
-    ///
-    /// Use this to wrap the shell in a sandbox. The `command_config.argv`
-    /// becomes the full argv passed to `CommandBuilder::from_argv`.
-    pub async fn with_command(
-        default_name: &str,
-        command_config: CommandConfig,
-    ) -> Result<Self, ShellError> {
-        let mut backend = Self {
-            sessions: HashMap::new(),
-            current_session: default_name.to_owned(),
-            command_config,
-            next_sentinel: 0,
-        };
-
-        backend
-            .create_session_internal(default_name, None, false)
-            .await?;
-
-        Ok(backend)
     }
 
     // -- private helpers ----------------------------------------------------
@@ -181,14 +328,15 @@ impl PtyBackend {
         cwd: Option<&Path>,
         clean_env: bool,
     ) -> Result<(), ShellError> {
-        let cwd = cwd
-            .map(|p| p.to_path_buf())
-            .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/tmp")));
+        let cwd = cwd.map(|p| p.to_path_buf()).unwrap_or_else(|| {
+            std::env::current_dir().unwrap_or_else(|_| self.config.fallback_cwd.to_path_buf())
+        });
 
-        let mut cmd = CommandBuilder::from_argv(self.command_config.argv.clone());
+        let mut cmd = CommandBuilder::from_argv(self.config.argv.clone());
         if clean_env {
-            let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_owned());
-            if self.command_config.login_shell {
+            let shell =
+                std::env::var("SHELL").unwrap_or_else(|_| self.config.fallback_shell.clone());
+            if self.config.login_shell {
                 cmd.arg("--noprofile");
                 cmd.arg("--norc");
             }
@@ -200,7 +348,7 @@ impl PtyBackend {
                 cmd.env("PATH", &path);
             }
             cmd.env("SHELL", &shell);
-        } else if self.command_config.login_shell {
+        } else if self.config.login_shell {
             cmd.arg("--login");
         }
 
@@ -214,7 +362,12 @@ impl PtyBackend {
 
         let pty_system = native_pty_system();
         let pair = pty_system
-            .openpty(PtySize { rows: 24, cols: 500, pixel_width: 0, pixel_height: 0 })
+            .openpty(PtySize {
+                rows: self.config.rows,
+                cols: self.config.cols,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
             .map_err(|e| ShellError::session_create_failed(name, e.to_string()))?;
 
         let child = pair
@@ -233,7 +386,9 @@ impl PtyBackend {
             .try_clone_reader()
             .map_err(|e| ShellError::session_create_failed(name, e.to_string()))?;
 
-        let scrollback = Arc::new(Mutex::new(ScrollbackBuffer::new(10_000)));
+        let scrollback = Arc::new(Mutex::new(ScrollbackBuffer::new(
+            self.config.scrollback_lines,
+        )));
         let reader_handle = spawn_reader(reader, scrollback.clone());
 
         let session = PtySession {
@@ -246,12 +401,12 @@ impl PtyBackend {
         };
 
         self.sessions.insert(name.to_owned(), session);
-        sleep(Duration::from_millis(100)).await;
+        sleep(self.config.poll_interval).await;
 
         // Suppress prompt and input echo for clean command output.
         let session = self.get_session(name)?;
         self.write_to_session(session, b"export PS1='' PS2=''; stty -echo 2>/dev/null\n")?;
-        sleep(Duration::from_millis(100)).await;
+        sleep(self.config.poll_interval).await;
 
         Ok(())
     }
@@ -269,12 +424,14 @@ impl PtyBackend {
     }
 
     /// Poll the scrollback buffer until the exit-code marker appears and the
-    /// output has been stable for 3 consecutive reads.
+    /// output has been stable for the configured number of consecutive reads.
     async fn wait_for_completion(
         &self,
         session: &PtySession,
         timeout_duration: Duration,
     ) -> Result<String, ShellError> {
+        let threshold = self.config.stability_threshold;
+        let poll_interval = self.config.poll_interval;
         let mut last_output = String::new();
         let mut stable_checks = 0usize;
 
@@ -285,7 +442,7 @@ impl PtyBackend {
 
                 if has_marker && output == last_output {
                     stable_checks += 1;
-                    if stable_checks >= 3 {
+                    if stable_checks >= threshold {
                         return Ok(output);
                     }
                 } else {
@@ -293,7 +450,7 @@ impl PtyBackend {
                 }
 
                 last_output = output;
-                sleep(Duration::from_millis(100)).await;
+                sleep(poll_interval).await;
             }
         };
 
@@ -458,7 +615,7 @@ impl ShellBackend for PtyBackend {
                 .keys()
                 .next()
                 .cloned()
-                .unwrap_or_else(|| "main".to_owned());
+                .unwrap_or_else(|| self.config.default_session.clone());
         }
 
         Ok(())
@@ -555,5 +712,81 @@ mod tests {
         let (cleaned, code) = PtyBackend::extract_output(output, "00000042");
         assert_eq!(code, Some(1));
         assert_eq!(cleaned, "error: something failed");
+    }
+
+    #[test]
+    fn pty_builder_default_matches_hardcoded_values() {
+        let c = PtyBuilder::new("test");
+        assert_eq!(c.argv, &[OsString::from("bash")]);
+        assert!(c.login_shell);
+        assert_eq!(c.rows, 24);
+        assert_eq!(c.cols, 500);
+        assert_eq!(c.scrollback_lines, 10_000);
+        assert_eq!(c.poll_interval, Duration::from_millis(100));
+        assert_eq!(c.stability_threshold, 3);
+        assert_eq!(c.fallback_cwd, Path::new("/tmp"));
+        assert_eq!(c.fallback_shell, "/bin/bash");
+    }
+
+    #[test]
+    fn pty_builder_chains_correctly() {
+        let c = PtyBuilder::new("test")
+            .argv(vec![OsString::from("zsh")])
+            .login_shell(false)
+            .dimensions(40, 1000)
+            .scrollback_lines(50_000)
+            .poll_interval(Duration::from_millis(50))
+            .stability_threshold(5)
+            .fallback_cwd("/home")
+            .fallback_shell("/bin/zsh");
+        assert_eq!(c.argv, &[OsString::from("zsh")]);
+        assert!(!c.login_shell);
+        assert_eq!(c.rows, 40);
+        assert_eq!(c.cols, 1000);
+        assert_eq!(c.scrollback_lines, 50_000);
+        assert_eq!(c.poll_interval, Duration::from_millis(50));
+        assert_eq!(c.stability_threshold, 5);
+        assert_eq!(c.fallback_cwd, Path::new("/home"));
+        assert_eq!(c.fallback_shell, "/bin/zsh");
+    }
+
+    #[test]
+    fn pty_builder_validate_rejects_invalid() {
+        assert!(PtyBuilder::new("test").argv(vec![]).validate().is_err());
+        assert!(
+            PtyBuilder::new("test")
+                .dimensions(0, 500)
+                .validate()
+                .is_err()
+        );
+        assert!(
+            PtyBuilder::new("test")
+                .dimensions(24, 0)
+                .validate()
+                .is_err()
+        );
+        assert!(
+            PtyBuilder::new("test")
+                .scrollback_lines(0)
+                .validate()
+                .is_err()
+        );
+        assert!(
+            PtyBuilder::new("test")
+                .poll_interval(Duration::ZERO)
+                .validate()
+                .is_err()
+        );
+        assert!(
+            PtyBuilder::new("test")
+                .stability_threshold(0)
+                .validate()
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn pty_builder_validate_accepts_defaults() {
+        assert!(PtyBuilder::new("test").validate().is_ok());
     }
 }

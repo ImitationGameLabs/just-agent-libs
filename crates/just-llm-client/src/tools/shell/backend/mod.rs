@@ -8,7 +8,7 @@ mod mock;
 
 #[cfg(test)]
 pub use mock::MockShellBackend;
-pub use pty::{CommandConfig, PtyBackend};
+pub use pty::{PtyBackend, PtyBuilder};
 
 use std::{path::Path, time::Duration};
 

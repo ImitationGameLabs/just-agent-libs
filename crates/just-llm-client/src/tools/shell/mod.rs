@@ -19,7 +19,7 @@ mod session;
 
 #[cfg(test)]
 pub use backend::MockShellBackend;
-pub use backend::{CommandConfig, PtyBackend, SessionInfo, ShellBackend, ShellOutput};
+pub use backend::{PtyBackend, PtyBuilder, SessionInfo, ShellBackend, ShellOutput};
 pub use error::ShellError;
 pub use session::*;
 
