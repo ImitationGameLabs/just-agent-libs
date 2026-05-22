@@ -13,15 +13,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().expect("failed to load .env file");
 
     let api_key = common::expect_env("JUST_LLM_OPENAI_COMPAT_API_KEY");
-    let base_url = std::env::var("JUST_LLM_OPENAI_COMPAT_BASE_URL").ok();
+    let base_url = common::expect_env("JUST_LLM_OPENAI_COMPAT_BASE_URL");
     let model = common::expect_env("JUST_LLM_OPENAI_COMPAT_MODEL");
 
-    let backend = match base_url {
-        Some(base_url) => OpenAiCompatBackend::with_base_url(api_key, base_url)?,
-        None => {
-            OpenAiCompatBackend::with_config(just_openai_compat::OpenAiCompatConfig::new(api_key))?
-        }
-    };
+    let backend = OpenAiCompatBackend::with_base_url(api_key, base_url)?;
 
     let tools = vec![ToolDefinition {
         kind: ToolType::Function,

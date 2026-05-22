@@ -2,7 +2,6 @@ use std::time::Duration;
 
 use just_common::error::TransportError;
 
-const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// Configuration for [`crate::OpenAiCompatClient`].
@@ -15,14 +14,14 @@ pub struct OpenAiCompatConfig {
 }
 
 impl OpenAiCompatConfig {
-    /// Creates a configuration with OpenAI-compatible defaults.
+    /// Creates a configuration with an explicit API key and base URL.
     ///
-    /// The default base URL targets the public OpenAI API. Override it for any other compatible
-    /// service.
-    pub fn new(api_key: impl Into<String>) -> Self {
+    /// `just-openai-compat` is a generic adapter for any OpenAI-compatible API, so no default
+    /// base URL is assumed — the caller must provide one.
+    pub fn new(api_key: impl Into<String>, base_url: impl Into<String>) -> Self {
         Self {
             api_key: api_key.into(),
-            base_url: DEFAULT_BASE_URL.to_owned(),
+            base_url: base_url.into(),
             timeout: DEFAULT_TIMEOUT,
             user_agent: Some(format!("just-openai-compat/{}", env!("CARGO_PKG_VERSION"))),
         }
@@ -93,7 +92,7 @@ mod tests {
 
     #[test]
     fn rejects_empty_api_key() {
-        let config = OpenAiCompatConfig::new("   ");
+        let config = OpenAiCompatConfig::new("   ", "http://localhost");
         let error = config.validate().unwrap_err();
 
         assert!(matches!(

@@ -81,16 +81,14 @@ async fn main() -> Result<(), just_deepseek::Error> {
 
 ```bash
 # DeepSeek examples
-DEEPSEEK_API_KEY=your-deepseek-api-key
-DEEPSEEK_BASE_URL=https://api.deepseek.com
-DEEPSEEK_MODEL=deepseek-v4-flash
-DEEPSEEK_PROMPT="Say hello in one sentence."
+JUST_LLM_DEEPSEEK_API_KEY=your-deepseek-api-key
+#JUST_LLM_DEEPSEEK_BASE_URL=https://api.deepseek.com
+JUST_LLM_DEEPSEEK_MODEL=deepseek-v4-flash
 
 # OpenAI-compatible examples
-OPENAI_COMPATIBLE_API_KEY=your-openai-compatible-api-key
-OPENAI_COMPATIBLE_BASE_URL=https://api.openai.com/v1
-OPENAI_COMPATIBLE_MODEL=
-OPENAI_COMPATIBLE_PROMPT="Say hello in one sentence."
+JUST_LLM_OPENAI_COMPAT_API_KEY=your-openai-compatible-api-key
+JUST_LLM_OPENAI_COMPAT_BASE_URL=https://your-compatible-endpoint/v1
+JUST_LLM_OPENAI_COMPAT_MODEL=
 ```
 
 ## Runnable examples

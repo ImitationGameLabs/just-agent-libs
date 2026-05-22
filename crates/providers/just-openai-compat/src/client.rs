@@ -18,17 +18,9 @@ pub struct OpenAiCompatClient {
 }
 
 impl OpenAiCompatClient {
-    /// Creates a client with default OpenAI-compatible configuration.
-    pub fn new(api_key: impl Into<String>) -> Result<Self, Error> {
-        Self::with_config(OpenAiCompatConfig::new(api_key))
-    }
-
-    /// Creates a client with a custom base URL.
-    pub fn with_base_url(
-        api_key: impl Into<String>,
-        base_url: impl Into<String>,
-    ) -> Result<Self, Error> {
-        Self::with_config(OpenAiCompatConfig::new(api_key).with_base_url(base_url))
+    /// Creates a client with an explicit API key and base URL.
+    pub fn new(api_key: impl Into<String>, base_url: impl Into<String>) -> Result<Self, Error> {
+        Self::with_config(OpenAiCompatConfig::new(api_key, base_url))
     }
 
     /// Creates a client from a validated configuration value.

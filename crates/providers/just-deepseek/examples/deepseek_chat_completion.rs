@@ -13,11 +13,15 @@ fn expect_env(name: &str) -> String {
 async fn main() -> Result<(), Box<dyn Error>> {
     dotenvy::dotenv().expect("failed to load .env file");
 
-    let api_key = expect_env("DEEPSEEK_API_KEY");
-    let model = expect_env("DEEPSEEK_MODEL");
-    let prompt = expect_env("DEEPSEEK_PROMPT");
+    let api_key = expect_env("JUST_LLM_DEEPSEEK_API_KEY");
+    let base_url = std::env::var("JUST_LLM_DEEPSEEK_BASE_URL").ok();
+    let model = expect_env("JUST_LLM_DEEPSEEK_MODEL");
+    let prompt = "Say hello in one sentence.";
 
-    let client = DeepSeekClient::new(api_key)?;
+    let client = match base_url {
+        Some(base_url) => DeepSeekClient::with_base_url(api_key, base_url)?,
+        None => DeepSeekClient::new(api_key)?,
+    };
 
     println!("--- request 1 ---");
     println!("  [system] You are a concise assistant.");

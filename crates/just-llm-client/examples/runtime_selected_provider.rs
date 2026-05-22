@@ -11,7 +11,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().expect("failed to load .env file");
 
     let client = common::client_from_env("You are a concise assistant.")?;
-    let prompt = common::expect_env("JUST_LLM_PROMPT");
+    let prompt = "Say hello in one sentence.";
 
     println!("--- request 1 ---");
     println!("  [provider] {}", client.provider_id());

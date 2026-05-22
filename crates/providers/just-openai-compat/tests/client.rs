@@ -11,7 +11,7 @@ use wiremock::{
 };
 
 fn client(server: &MockServer) -> OpenAiCompatClient {
-    OpenAiCompatClient::with_base_url("test-key", server.uri()).unwrap()
+    OpenAiCompatClient::new("test-key", server.uri()).unwrap()
 }
 
 fn basic_request() -> CreateChatCompletionRequest {
@@ -92,7 +92,7 @@ async fn creates_non_streaming_chat_completion() {
 async fn rejects_stream_flag_on_non_stream_method() {
     let request = CreateChatCompletionRequest { stream: Some(true), ..basic_request() };
 
-    let error = OpenAiCompatClient::new("test-key")
+    let error = OpenAiCompatClient::new("test-key", "http://localhost")
         .unwrap()
         .create_chat_completion(request)
         .await

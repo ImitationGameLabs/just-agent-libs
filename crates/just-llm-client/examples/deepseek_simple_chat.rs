@@ -13,7 +13,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let api_key = common::expect_env("JUST_LLM_DEEPSEEK_API_KEY");
     let base_url = std::env::var("JUST_LLM_DEEPSEEK_BASE_URL").ok();
     let model = common::expect_env("JUST_LLM_DEEPSEEK_MODEL");
-    let prompt = common::expect_env("JUST_LLM_DEEPSEEK_PROMPT");
+    let prompt = "Say hello in one sentence.";
 
     let backend = match base_url {
         Some(base_url) => DeepSeekBackend::with_base_url(api_key, base_url)?,

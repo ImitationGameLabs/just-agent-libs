@@ -58,17 +58,16 @@ Example environment:
 # Select which function path the example exercises
 INIT_STYLE=direct
 INIT_MODEL=gpt-4.1-mini
-INIT_PROMPT=Compare initialization styles in one sentence.
 
 # Direct path
 JUST_LLM_OPENAI_COMPAT_API_KEY=your-openai-compatible-api-key
-JUST_LLM_OPENAI_COMPAT_BASE_URL=https://api.openai.com/v1
+JUST_LLM_OPENAI_COMPAT_BASE_URL=https://your-compatible-endpoint/v1
 
 # Registry path
 JUST_LLM_PROVIDER=openai-compatible
 JUST_LLM_MODEL=gpt-4.1-mini
 JUST_LLM_OPENAI_COMPAT_API_KEY=your-openai-compatible-api-key
-JUST_LLM_OPENAI_COMPAT_BASE_URL=https://api.openai.com/v1
+JUST_LLM_OPENAI_COMPAT_BASE_URL=https://your-compatible-endpoint/v1
 ```
 
 ## Prepared request flow
@@ -86,7 +85,7 @@ use just_llm_client::{
 async fn main() -> Result<(), just_llm_client::LlmError> {
     let backend = OpenAiCompatBackend::with_base_url(
         "your-api-key",
-        "https://api.openai.com/v1",
+        "https://your-compatible-endpoint/v1",
     )?;
 
     let prepared = backend

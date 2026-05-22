@@ -14,15 +14,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().expect("failed to load .env file");
 
     let api_key = common::expect_env("JUST_LLM_OPENAI_COMPAT_API_KEY");
+    let base_url = common::expect_env("JUST_LLM_OPENAI_COMPAT_BASE_URL");
     let model = common::expect_env("JUST_LLM_OPENAI_COMPAT_MODEL");
-    let prompt = common::expect_env("JUST_LLM_OPENAI_COMPAT_PROMPT");
+    let prompt = "Say hello in one sentence.";
 
-    let provider = match std::env::var("JUST_LLM_OPENAI_COMPAT_BASE_URL") {
-        Ok(base_url) => {
-            OpenAiCompatProvider::from_api_key("openai-compatible", api_key).with_base_url(base_url)
-        }
-        Err(_) => OpenAiCompatProvider::from_api_key("openai-compatible", api_key),
-    };
+    let provider = OpenAiCompatProvider::from_api_key("openai-compatible", api_key, base_url);
     let registry = ProviderRegistry::with_openai_compat(provider);
     let client = registry.chat(
         "openai-compatible",

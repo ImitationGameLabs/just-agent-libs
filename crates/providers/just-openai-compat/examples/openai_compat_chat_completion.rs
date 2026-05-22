@@ -13,15 +13,12 @@ fn expect_env(name: &str) -> String {
 async fn main() -> Result<(), Box<dyn Error>> {
     dotenvy::dotenv().expect("failed to load .env file");
 
-    let api_key = expect_env("OPENAI_COMPAT_API_KEY");
-    let base_url = std::env::var("OPENAI_COMPAT_BASE_URL").ok();
-    let model = expect_env("OPENAI_COMPAT_MODEL");
-    let prompt = expect_env("OPENAI_COMPAT_PROMPT");
+    let api_key = expect_env("JUST_LLM_OPENAI_COMPAT_API_KEY");
+    let base_url = expect_env("JUST_LLM_OPENAI_COMPAT_BASE_URL");
+    let model = expect_env("JUST_LLM_OPENAI_COMPAT_MODEL");
+    let prompt = "Say hello in one sentence.";
 
-    let client = match base_url {
-        Some(base_url) => OpenAiCompatClient::with_base_url(api_key, base_url)?,
-        None => OpenAiCompatClient::new(api_key)?,
-    };
+    let client = OpenAiCompatClient::new(api_key, base_url)?;
 
     println!("--- request 1 ---");
     println!("  [system] You are a concise assistant.");

@@ -34,11 +34,9 @@ pub fn client_from_env(system_prompt: impl Into<String>) -> Result<ChatClient, B
         #[cfg(feature = "openai-compat")]
         "openai-compatible" => {
             let api_key = expect_env("JUST_LLM_OPENAI_COMPAT_API_KEY");
-            let provider = match std::env::var("JUST_LLM_OPENAI_COMPAT_BASE_URL") {
-                Ok(base_url) => OpenAiCompatProvider::from_api_key("openai-compatible", api_key)
-                    .with_base_url(base_url),
-                Err(_) => OpenAiCompatProvider::from_api_key("openai-compatible", api_key),
-            };
+            let base_url = expect_env("JUST_LLM_OPENAI_COMPAT_BASE_URL");
+            let provider =
+                OpenAiCompatProvider::from_api_key("openai-compatible", api_key, base_url);
             registry.register(provider);
         }
         _ => return Err(format!("unsupported JUST_LLM_PROVIDER: {provider_id}").into()),

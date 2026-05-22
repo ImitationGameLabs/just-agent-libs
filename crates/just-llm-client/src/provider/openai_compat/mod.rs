@@ -57,7 +57,7 @@ impl OpenAiCompatBackend {
         api_key: impl Into<String>,
         base_url: impl Into<String>,
     ) -> Result<Self, LlmError> {
-        let client = just_openai_compat::OpenAiCompatClient::with_base_url(api_key, base_url)
+        let client = just_openai_compat::OpenAiCompatClient::new(api_key, base_url)
             .map_err(|source| LlmError::backend("openai-compatible", source))?;
 
         Ok(Self::new(client))
