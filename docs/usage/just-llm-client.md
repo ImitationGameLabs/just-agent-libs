@@ -152,21 +152,6 @@ let tool_definitions = tools.tool_definitions();
 That lets you keep the provider-neutral request/response flow in `just-llm-client`, while opting
 into a small reusable tool runtime only when your application needs it.
 
-For a complete but intentionally tiny reference, the workspace also ships `just-agent`, a binary
-crate that:
-
-- creates a `ChatClient` from the same `JUST_LLM_*` environment variables used by the examples
-- registers a modular shell tool surface built around `shell_session_*` tools
-- applies a small policy/approval gate before tool execution
-- compacts older conversation context before a turn when the running history grows too large
-- loops on tool calls until the model returns a final answer
-
-Run it with:
-
-```bash
-cargo run -p just-agent --example run-agent-with-prompt -- --workspace=. -- --prompt "Show the current working directory."
-```
-
 ## Runtime-selected provider example
 
 The workspace also includes:

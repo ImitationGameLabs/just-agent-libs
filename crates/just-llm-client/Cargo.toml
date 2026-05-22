@@ -8,7 +8,13 @@ license.workspace = true
 default = ["deepseek", "openai-compat"]
 deepseek = ["dep:just-deepseek", "dep:tokenx-rs"]
 openai-compat = ["dep:just-openai-compat", "dep:tokenx-rs"]
-tools = ["dep:anyhow", "dep:regex", "dep:portable-pty", "dep:strip-ansi-escapes", "dep:tokio"]
+tools = [
+  "dep:anyhow",
+  "dep:regex",
+  "dep:portable-pty",
+  "dep:strip-ansi-escapes",
+  "dep:tokio",
+]
 
 [dependencies]
 anyhow = { workspace = true, optional = true }

@@ -4,7 +4,6 @@ members = [
   "crates/just-common",
   "crates/providers/just-deepseek",
   "crates/providers/just-openai-compat",
-  "crates/just-agent",
 ]
 
 resolver = "3"
@@ -43,14 +42,5 @@ tokio = { version = "1.52.1", features = ["macros", "rt-multi-thread"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tokenx-rs = "0.1.0"
-rable = "0.2.0"
 wiremock = "0.6.5"
 strip-ansi-escapes = "0.2.1"
-clap = { version = "4.6", features = ["derive", "env"] }
-ratatui = { version = "0.30.0", features = ["unstable-rendered-line-info"] }
-ratatui-textarea = "0.9.1"
-pulldown-cmark = "0.13.3"
-comfy-table = "7.2.2"
-syntect = "5.3"
-dirs = "6"
-unicode-width = "0.2.2"

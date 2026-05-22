@@ -33,11 +33,6 @@ When you want reusable local tools next to the client layer:
 just-llm-client = { version = "...", features = ["openai-compat", "tools"] }
 ```
 
-The workspace also includes a deliberately tiny reference binary, `just-agent`, that wires
-`ProviderRegistry` to a modular shell-oriented tool set and runs a basic tool-calling loop with a
-small built-in policy gate. It also performs conservative pre-turn context compaction, keeping
-recent turns verbatim and summarizing older history when the conversation grows too large.
-
 #### Bring your own backend
 
 just-rs aims to support more model providers over time. But if your provider is not yet covered, or you are a model provider with a custom API that does not follow any well-known protocol, you can easily build your own backend by implementing the capability traits. `LlmBackend` is a convenience trait that requires `Identifiable + ChatCompletion + StreamingChatCompletion + CapabilityNegotiation`. Implement the core traits, then opt into optional capabilities by overriding the default `CapabilityNegotiation` methods:
@@ -106,14 +101,6 @@ let response = client.create_chat_completion(
 cargo run -p just-llm-client --example deepseek_simple_chat
 cargo run -p just-llm-client --example openai_compat_simple_chat
 cargo run -p just-llm-client --example runtime_selected_provider
-
-# Minimal reference agent (requires JUST_LLM_* env vars)
-# Exposes shell_session_* tools with lightweight approval gating
-# Optional compaction tuning:
-# JUST_AGENT_COMPACT_TRIGGER_TOKENS=12000
-# JUST_AGENT_COMPACT_KEEP_RECENT_TOKENS=4000
-# JUST_AGENT_COMPACT_MAX_TOKENS=1200
-cargo run -p just-agent --example run-agent-with-prompt -- --workspace=. -- --prompt "Show the current working directory."
 
 # Provider-specific SDK examples
 cargo run -p just-deepseek --example deepseek_chat_completion

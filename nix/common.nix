@@ -63,7 +63,6 @@ let
     just-deepseek = "crates/providers/just-deepseek";
     just-openai-compat = "crates/providers/just-openai-compat";
     just-llm-client = "crates/just-llm-client";
-    just-agent = "crates/just-agent";
   };
 in
 {
