@@ -1,8 +1,14 @@
 [package]
 name = "just-common"
+description = "Shared HTTP transport, SSE stream parsing, and error types for the just-agent ecosystem"
+readme = "README.md"
 edition = "2024"
 version.workspace = true
 license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+keywords = ["sse", "http-client", "openai"]
+categories = ["web-programming::http-client", "asynchronous", "parser-implementations"]
 
 [dependencies]
 async-stream = { workspace = true }

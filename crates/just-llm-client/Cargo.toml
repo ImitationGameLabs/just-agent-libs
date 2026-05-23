@@ -1,8 +1,14 @@
 [package]
 name = "just-llm-client"
+description = "Just a lightweight, composable, and minimal LLM client — not an agent framework"
+readme = "README.md"
 edition = "2024"
 version.workspace = true
 license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+keywords = ["llm", "ai", "agent", "harness", "lightweight"]
+categories = ["api-bindings", "asynchronous", "web-programming::http-client"]
 
 [features]
 default = ["deepseek", "openai-compat"]
