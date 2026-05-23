@@ -16,11 +16,7 @@ pub struct ChatCompletionRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub thinking: Option<ThinkingConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub frequency_penalty: Option<f32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub max_tokens: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub presence_penalty: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub response_format: Option<ResponseFormat>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -41,6 +37,10 @@ pub struct ChatCompletionRequest {
     pub logprobs: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub top_logprobs: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning_effort: Option<ReasoningEffort>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_id: Option<String>,
 }
 
 impl ChatCompletionRequest {
@@ -50,9 +50,7 @@ impl ChatCompletionRequest {
             model: model.into(),
             messages,
             thinking: None,
-            frequency_penalty: None,
             max_tokens: None,
-            presence_penalty: None,
             response_format: None,
             stop: None,
             stream: None,
@@ -63,6 +61,8 @@ impl ChatCompletionRequest {
             tool_choice: None,
             logprobs: None,
             top_logprobs: None,
+            reasoning_effort: None,
+            user_id: None,
         }
     }
 }
@@ -201,8 +201,6 @@ impl ChatMessage {
 pub struct ThinkingConfig {
     #[serde(rename = "type")]
     pub kind: ThinkingMode,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub reasoning_effort: Option<ReasoningEffort>,
 }
 
 /// Whether reasoning is enabled for the request.

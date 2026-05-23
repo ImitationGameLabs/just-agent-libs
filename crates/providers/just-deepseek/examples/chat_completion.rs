@@ -23,10 +23,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
         None => DeepSeekClient::new(api_key)?,
     };
 
-    println!("--- request 1 ---");
-    println!("  [system] You are a concise assistant.");
-    println!("  [user] {prompt}");
-
     let request = CreateChatCompletionRequest::new(
         model,
         vec![ChatMessage::system("You are a concise assistant."), ChatMessage::user(prompt)],
@@ -38,12 +34,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .first()
         .expect("expected at least one choice");
 
-    println!("\n--- response 1 ---");
     if let Some(rc) = &choice.message.reasoning_content {
-        println!("  [reasoning] {rc}");
+        println!("[reasoning] {rc}\n");
     }
     println!(
-        "  [assistant] {}",
+        "[assistant] {}",
         choice.message.content.as_deref().unwrap_or_default()
     );
     Ok(())

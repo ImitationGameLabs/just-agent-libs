@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use just_common::error::TransportError;
 
-const DEFAULT_BASE_URL: &str = "https://api.deepseek.com/v1";
+const DEFAULT_BASE_URL: &str = "https://api.deepseek.com";
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// Configuration for [`crate::DeepSeekClient`].

@@ -13,9 +13,7 @@ impl From<client_chat::ChatCompletionRequest> for provider_chat::CreateChatCompl
             model: request.model,
             messages: request.messages.into_iter().map(Into::into).collect(),
             thinking: None,
-            frequency_penalty: request.frequency_penalty,
             max_tokens: request.max_tokens,
-            presence_penalty: request.presence_penalty,
             response_format: request.response_format.map(Into::into),
             stop: request.stop.map(Into::into),
             stream: request.stream,
@@ -28,6 +26,8 @@ impl From<client_chat::ChatCompletionRequest> for provider_chat::CreateChatCompl
             tool_choice: request.tool_choice.map(Into::into),
             logprobs: request.logprobs,
             top_logprobs: request.top_logprobs,
+            reasoning_effort: None,
+            user_id: None,
         }
     }
 }
