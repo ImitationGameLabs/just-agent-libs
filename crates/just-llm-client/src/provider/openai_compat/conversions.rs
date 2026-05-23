@@ -46,6 +46,8 @@ impl From<client_chat::ChatMessage> for provider_chat::ChatMessage {
                     role: message.role,
                     content: message.content,
                     name: message.name,
+                    // Passed through for OpenRouter reasoning continuity;
+                    // harmless (ignored) on OpenAI, unused by Groq (different field name).
                     reasoning_content: message.reasoning_content,
                 })
             }

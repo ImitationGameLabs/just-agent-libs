@@ -105,6 +105,8 @@ pub struct TextMessage {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    /// Provider-dependent: used by OpenRouter for multi-turn reasoning continuity.
+    /// Groq uses a different field name (`reasoning`), OpenAI Chat Completions ignores it entirely.
     pub reasoning_content: Option<String>,
 }
 
@@ -121,6 +123,8 @@ pub struct ToolCallsMessage {
     pub name: Option<String>,
     pub tool_calls: Vec<ChatCompletionToolCall>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    /// Provider-dependent: used by OpenRouter for multi-turn reasoning continuity.
+    /// Groq uses a different field name (`reasoning`), OpenAI Chat Completions ignores it entirely.
     pub reasoning_content: Option<String>,
 }
 
