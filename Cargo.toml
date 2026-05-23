@@ -9,7 +9,6 @@ members = [
 resolver = "3"
 
 [workspace.package]
-version = "0.1.0"
 license = "MIT"
 repository = "https://github.com/ImitationGameLabs/just-agent-libs"
 rust-version = "1.86"
