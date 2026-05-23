@@ -6,15 +6,15 @@ use crate::tools::LlmTool;
 /// Adapter that wraps an [`LlmTool`] with an overridden name and optional description.
 ///
 /// Useful when composing tool sets from shared implementations but exposing them under
-/// application-specific names. For example, a reusable shell tool can be presented as
+/// application-specific names. For example:
 ///
 /// ```rust,ignore
 /// use just_llm_client::tools::{LlmTool, RenamedTool};
 ///
 /// let adapted = RenamedTool::new(
 ///     original_tool,
-///     "shell_session_exec",
-///     Some("Execute a shell command in a session."),
+///     "my_tool",
+///     Some("A custom description."),
 /// );
 /// ```
 ///

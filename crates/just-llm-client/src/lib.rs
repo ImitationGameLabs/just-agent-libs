@@ -48,8 +48,7 @@ pub mod client;
 pub mod error;
 /// Provider adapters and runtime provider selection.
 pub mod provider;
-/// Optional local tool runtime helpers and reusable feature-gated tools.
-#[cfg(feature = "tools")]
+/// Local tool runtime helpers.
 pub mod tools;
 /// Shared normalized value types.
 pub mod types;
@@ -66,7 +65,6 @@ pub use provider::validation::{
     into_validated_streaming_request, validate_common_request, validate_non_streaming_request,
     validate_prepared_non_streaming_request, validate_prepared_streaming_request,
 };
-#[cfg(feature = "tools")]
 pub use tools::{LlmTool, ToolCallError, ToolDispatcher, ToolRegistrationError};
 
 #[cfg(feature = "deepseek")]
