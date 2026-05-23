@@ -6,6 +6,8 @@ use serde_json::Value;
 pub struct ResponseFormat {
     #[serde(rename = "type")]
     pub kind: ResponseFormatType,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub json_schema: Option<JsonSchemaFormat>,
 }
 
 /// Response-format families supported by OpenAI-compatible APIs.
@@ -14,6 +16,19 @@ pub struct ResponseFormat {
 pub enum ResponseFormatType {
     Text,
     JsonObject,
+    JsonSchema,
+}
+
+/// JSON Schema definition for structured-output requests.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct JsonSchemaFormat {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub schema: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub strict: Option<bool>,
 }
 
 /// Stop sequence configuration.
@@ -139,12 +154,21 @@ pub struct Usage {
     pub total_tokens: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub completion_tokens_details: Option<CompletionTokensDetails>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt_tokens_details: Option<PromptTokensDetails>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct CompletionTokensDetails {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning_tokens: Option<u32>,
+}
+
+/// Prompt-token details returned by some providers.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct PromptTokensDetails {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cached_tokens: Option<u32>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]

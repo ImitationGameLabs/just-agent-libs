@@ -27,6 +27,13 @@ impl From<client_chat::ChatCompletionRequest> for provider_chat::CreateChatCompl
             tool_choice: request.tool_choice.map(Into::into),
             logprobs: request.logprobs,
             top_logprobs: request.top_logprobs,
+            max_completion_tokens: None,
+            seed: None,
+            n: None,
+            parallel_tool_calls: None,
+            user: None,
+            logit_bias: None,
+            reasoning_effort: None,
         }
     }
 }
@@ -39,6 +46,7 @@ impl From<client_chat::ChatMessage> for provider_chat::ChatMessage {
                     role: message.role,
                     content: message.content,
                     name: message.name,
+                    reasoning_content: message.reasoning_content,
                 })
             }
             client_chat::ChatMessage::ToolCalls(message) => {
@@ -47,6 +55,7 @@ impl From<client_chat::ChatMessage> for provider_chat::ChatMessage {
                     content: message.content,
                     name: message.name,
                     tool_calls: message.tool_calls.into_iter().map(Into::into).collect(),
+                    reasoning_content: message.reasoning_content,
                 })
             }
             client_chat::ChatMessage::ToolResult(message) => {
@@ -71,6 +80,7 @@ impl From<client_chat::ResponseFormat> for provider_chat::ResponseFormat {
                 }
                 _ => provider_chat::ResponseFormatType::Text,
             },
+            json_schema: None,
         }
     }
 }

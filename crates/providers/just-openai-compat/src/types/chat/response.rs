@@ -37,6 +37,8 @@ pub struct AssistantMessage {
     pub reasoning_content: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_calls: Option<Vec<ChatCompletionToolCall>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub refusal: Option<String>,
     pub role: AssistantRole,
 }
 

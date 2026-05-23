@@ -19,9 +19,9 @@ pub use response::{
 pub use shared::{
     ChatCompletionChunkToolCall, ChatCompletionLogprobs, ChatCompletionToolCall,
     CompletionTokensDetails, FinishReason, FunctionCall, FunctionCallDelta, FunctionDefinition,
-    NamedToolChoice, NamedToolChoiceFunction, ResponseFormat, ResponseFormatType, StopSequence,
-    StreamOptions, TokenLogprob, ToolChoice, ToolChoiceMode, ToolDefinition, ToolType, TopLogprob,
-    Usage,
+    JsonSchemaFormat, NamedToolChoice, NamedToolChoiceFunction, PromptTokensDetails,
+    ResponseFormat, ResponseFormatType, StopSequence, StreamOptions, TokenLogprob, ToolChoice,
+    ToolChoiceMode, ToolDefinition, ToolType, TopLogprob, Usage,
 };
 
 #[cfg(test)]

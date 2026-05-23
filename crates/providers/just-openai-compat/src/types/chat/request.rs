@@ -1,9 +1,9 @@
-use serde::{Deserialize, Serialize};
-
 use super::{
     ResponseFormat, StopSequence, StreamOptions, ToolChoice, ToolDefinition,
     shared::ChatCompletionToolCall,
 };
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 /// Wire DTO for `POST /chat/completions`.
 pub type CreateChatCompletionRequest = ChatCompletionRequest;
@@ -39,6 +39,20 @@ pub struct ChatCompletionRequest {
     pub logprobs: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub top_logprobs: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_completion_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub seed: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub n: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parallel_tool_calls: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub logit_bias: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning_effort: Option<String>,
 }
 
 impl ChatCompletionRequest {
@@ -60,6 +74,13 @@ impl ChatCompletionRequest {
             tool_choice: None,
             logprobs: None,
             top_logprobs: None,
+            max_completion_tokens: None,
+            seed: None,
+            n: None,
+            parallel_tool_calls: None,
+            user: None,
+            logit_bias: None,
+            reasoning_effort: None,
         }
     }
 }
@@ -83,6 +104,8 @@ pub struct TextMessage {
     pub content: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning_content: Option<String>,
 }
 
 /// Assistant message that contains tool calls.
@@ -97,6 +120,8 @@ pub struct ToolCallsMessage {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     pub tool_calls: Vec<ChatCompletionToolCall>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning_content: Option<String>,
 }
 
 /// Tool result message sent back to the model.
@@ -112,7 +137,12 @@ pub struct ToolResultMessage {
 impl ChatMessage {
     /// Creates a message with an explicit role string.
     pub fn new(role: impl Into<String>, content: impl Into<String>) -> Self {
-        Self::Message(TextMessage { role: role.into(), content: content.into(), name: None })
+        Self::Message(TextMessage {
+            role: role.into(),
+            content: content.into(),
+            name: None,
+            reasoning_content: None,
+        })
     }
 
     /// Creates a named message for providers that support the `name` field.
@@ -125,6 +155,7 @@ impl ChatMessage {
             role: role.into(),
             content: content.into(),
             name: Some(name.into()),
+            reasoning_content: None,
         })
     }
 
@@ -150,6 +181,7 @@ impl ChatMessage {
             content: None,
             name: None,
             tool_calls,
+            reasoning_content: None,
         })
     }
 
@@ -163,6 +195,7 @@ impl ChatMessage {
             content: Some(content.into()),
             name: None,
             tool_calls,
+            reasoning_content: None,
         })
     }
 
