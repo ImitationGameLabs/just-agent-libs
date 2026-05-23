@@ -1,5 +1,5 @@
 {
-  description = "just-rs — async Rust workspace for provider SDKs and LLM client abstractions";
+  description = "just-agent-libs — async Rust workspace for provider SDKs and LLM client abstractions";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";

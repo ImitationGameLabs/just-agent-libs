@@ -9,12 +9,13 @@ members = [
 resolver = "3"
 
 [workspace.package]
+version = "0.0.0" # placeholder, has no practical effect; crates carry independent versions
 license = "MIT"
 repository = "https://github.com/ImitationGameLabs/just-agent-libs"
 rust-version = "1.86"
 
 [workspace.metadata.crane]
-name = "just-rs"
+name = "just-agent-libs"
 
 [workspace.dependencies]
 just-common = { path = "crates/just-common", version = "0.1.0" }

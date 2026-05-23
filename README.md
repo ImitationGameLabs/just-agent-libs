@@ -1,4 +1,4 @@
-# just-rs
+# just-agent-libs
 
 Not an agent framework, not a platform — just the LLM client. Minimal, well-abstracted, and extensible.
 
@@ -35,7 +35,7 @@ just-llm-client = { version = "...", features = ["openai-compat", "tools"] }
 
 #### Bring your own backend
 
-just-rs aims to support more model providers over time. But if your provider is not yet covered, or you are a model provider with a custom API that does not follow any well-known protocol, you can easily build your own backend by implementing the capability traits. `LlmBackend` is a convenience trait that requires `Identifiable + ChatCompletion + StreamingChatCompletion + CapabilityNegotiation`. Implement the core traits, then opt into optional capabilities by overriding the default `CapabilityNegotiation` methods:
+just-agent-libs aims to support more model providers over time. But if your provider is not yet covered, or you are a model provider with a custom API that does not follow any well-known protocol, you can easily build your own backend by implementing the capability traits. `LlmBackend` is a convenience trait that requires `Identifiable + ChatCompletion + StreamingChatCompletion + CapabilityNegotiation`. Implement the core traits, then opt into optional capabilities by overriding the default `CapabilityNegotiation` methods:
 
 ```rust
 struct MyBackend { /* ... */ }

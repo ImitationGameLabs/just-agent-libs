@@ -11,7 +11,7 @@ let
     cargoArtifacts
     ;
 
-  project = "just-rs";
+  project = "just-agent-libs";
 in
 {
   # Run clippy (and deny all warnings) on the workspace source
