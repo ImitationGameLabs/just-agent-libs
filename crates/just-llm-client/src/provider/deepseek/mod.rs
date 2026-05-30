@@ -14,7 +14,7 @@ use futures_util::StreamExt;
 use crate::{
     capability::{
         Balance, CapabilityNegotiation, ChatCompletion, ChatCompletionStream, Identifiable,
-        ModelCatalog, StreamingChatCompletion, TokenEstimation,
+        ModelCatalog, StreamingChatCompletion,
     },
     error::LlmError,
     provider::validation::{
@@ -26,7 +26,6 @@ use crate::{
         chat::{ChatCompletionRequest, ChatCompletionResponse},
         model::{ModelCatalogResponse, ModelInfo},
         prepared::PreparedChatRequest,
-        token::TokenEstimate,
     },
 };
 
@@ -74,10 +73,6 @@ impl CapabilityNegotiation for DeepSeekBackend {
     }
 
     fn balance(&self) -> Result<&dyn Balance, LlmError> {
-        Ok(self)
-    }
-
-    fn token_estimation(&self) -> Result<&dyn TokenEstimation, LlmError> {
         Ok(self)
     }
 }
@@ -233,25 +228,5 @@ impl Balance for DeepSeekBackend {
                 })
                 .collect(),
         })
-    }
-}
-
-#[async_trait]
-impl TokenEstimation for DeepSeekBackend {
-    async fn estimate_tokens(
-        &self,
-        request: &PreparedChatRequest,
-    ) -> Result<TokenEstimate, LlmError> {
-        request.ensure_backend(self.backend_id())?;
-
-        Ok(TokenEstimate::approximate_from_prepared_text(
-            request,
-            |body| {
-                tokenx_rs::estimate_token_count(body)
-                    .try_into()
-                    .unwrap_or(u32::MAX)
-            },
-            "tokenx-rs",
-        ))
     }
 }

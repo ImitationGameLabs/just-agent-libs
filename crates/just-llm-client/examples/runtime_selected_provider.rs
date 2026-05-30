@@ -22,17 +22,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let prepared = client
         .prepared_request(client.request(vec![ChatMessage::user(prompt)]))
         .await?;
-    let estimate = client
-        .token_estimation()?
-        .estimate_tokens(&prepared)
-        .await?;
 
     eprintln!(
         "prepared payload snapshot: {}",
         prepared.request_body_text()
     );
     eprintln!("request preview: {:?}", prepared.preview());
-    eprintln!("token estimate: {:?}", estimate);
 
     let response = client.send_prepared(&prepared).await?;
 

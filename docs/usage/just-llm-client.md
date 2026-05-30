@@ -18,7 +18,7 @@ types", not "provider wire DTOs without the client layer".
 ## When to use it
 
 - You want one code path that can target DeepSeek or an OpenAI-compatible endpoint.
-- You want prepared requests, provider-neutral response types, or token estimation helpers.
+- You want prepared requests or provider-neutral response types.
 - You want optional capabilities to be negotiated explicitly at runtime instead of spread across
   broad generic bounds.
 
@@ -72,11 +72,11 @@ JUST_LLM_OPENAI_COMPAT_BASE_URL=https://your-compatible-endpoint/v1
 
 ## Prepared request flow
 
-The `just-llm-client` crate supports preparing, inspecting, estimating, and later executing a request:
+The `just-llm-client` crate supports preparing, inspecting, and later executing a request:
 
 ```rust
 use just_llm_client::{
-    CapabilityNegotiation, ChatCompletion,
+    ChatCompletion,
     provider::OpenAiCompatBackend,
     types::chat::{ChatCompletionRequest, ChatMessage},
 };
@@ -97,11 +97,9 @@ async fn main() -> Result<(), just_llm_client::LlmError> {
             .with_system_prompt("You are a concise assistant."),
         )
         .await?;
-    let estimate = backend.token_estimation()?.estimate_tokens(&prepared).await?;
 
     println!("{}", prepared.request_body_text());
     println!("{:?}", prepared.preview());
-    println!("{:?}", estimate);
 
     let response = backend.send_prepared(&prepared).await?;
     println!("{}", response.first_choice_content().unwrap_or_default());
@@ -168,5 +166,5 @@ Those examples are intentionally complementary:
 
 The shared `LlmBackend` surface keeps always-on operations such as chat completion
 directly callable, and routes optional operations through `CapabilityNegotiation`. A successful
-negotiation returns a handle like `&dyn ModelCatalog` or `&dyn TokenEstimation`; unsupported
+negotiation returns a handle like `&dyn ModelCatalog`; unsupported
 backends fail at negotiation time instead of inside the capability method.

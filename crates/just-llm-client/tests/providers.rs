@@ -1,19 +1,18 @@
 #[cfg(feature = "openai-compat")]
+use just_llm_client::error::Capability;
+
+#[cfg(feature = "openai-compat")]
 use futures_util::StreamExt;
 #[cfg(any(feature = "deepseek", feature = "openai-compat"))]
 use just_llm_client::CapabilityNegotiation;
 #[cfg(feature = "openai-compat")]
 use just_llm_client::StreamingChatCompletion;
-#[cfg(feature = "openai-compat")]
-use just_llm_client::error::Capability;
 #[cfg(feature = "deepseek")]
 use just_llm_client::provider::DeepSeekBackend;
 #[cfg(feature = "openai-compat")]
 use just_llm_client::provider::OpenAiCompatBackend;
-use just_llm_client::types::chat::Usage;
 #[cfg(feature = "deepseek")]
 use just_llm_client::types::chat::{ToolChoice, ToolChoiceMode};
-use just_llm_client::types::token::TokenEstimateKind;
 #[cfg(any(feature = "deepseek", feature = "openai-compat"))]
 use just_llm_client::{
     ChatCompletion,
@@ -114,32 +113,6 @@ async fn preparation_rejects_invalid_request_combinations() {
     let error = backend.prepared_request(request).await.unwrap_err();
 
     assert!(matches!(error, LlmError::InvalidRequest(_)));
-}
-
-#[cfg(feature = "deepseek")]
-#[tokio::test]
-async fn token_estimation_returns_approximate_estimate() {
-    let server = MockServer::start().await;
-    let backend = deepseek_backend(&server);
-    let prepared = backend
-        .prepared_request(ChatCompletionRequest::new(
-            "deepseek-v4-pro",
-            vec![ChatMessage::user("estimate")],
-        ))
-        .await
-        .unwrap();
-
-    let estimate = backend
-        .token_estimation()
-        .unwrap()
-        .estimate_tokens(&prepared)
-        .await
-        .unwrap();
-
-    assert!(estimate.prompt_tokens > 0);
-    assert_eq!(estimate.total_tokens, None);
-    assert_eq!(estimate.kind, TokenEstimateKind::Approximate);
-    assert_eq!(estimate.source.as_deref(), Some("tokenx-rs"));
 }
 
 #[cfg(feature = "deepseek")]
@@ -277,31 +250,6 @@ async fn prepared_requests_can_be_previewed_and_executed() {
     let response = backend.send_prepared(&prepared).await.unwrap();
 
     assert_eq!(response.first_choice_content(), Some("prepared"));
-}
-
-#[cfg(feature = "openai-compat")]
-#[tokio::test]
-async fn prepare_and_estimate_chat_completion_returns_consistent_preview() {
-    let server = MockServer::start().await;
-    let backend = openai_backend(&server);
-    let prepared = backend
-        .prepared_request(
-            ChatCompletionRequest::new("gpt-4.1-mini", vec![ChatMessage::user("estimate")])
-                .with_system_prompt("You are a concise assistant."),
-        )
-        .await
-        .unwrap();
-    let estimate = backend
-        .token_estimation()
-        .unwrap()
-        .estimate_tokens(&prepared)
-        .await
-        .unwrap();
-
-    assert_eq!(prepared.backend_id(), "openai-compatible");
-    assert_eq!(prepared.model(), Some("gpt-4.1-mini"));
-    assert_eq!(prepared.preview().tool_count, 0);
-    assert!(estimate.prompt_tokens > 0);
 }
 
 #[cfg(feature = "openai-compat")]
@@ -596,24 +544,4 @@ fn prepared_requests_reject_invalid_deserialization_payloads() {
     .unwrap_err();
 
     assert!(error.to_string().contains("messages array"));
-}
-
-#[test]
-fn token_estimate_can_be_derived_from_provider_usage() {
-    let estimate = just_llm_client::types::token::TokenEstimate::from_usage(
-        &Usage {
-            completion_tokens: 12,
-            prompt_tokens: 34,
-            prompt_cache_hit_tokens: None,
-            prompt_cache_miss_tokens: None,
-            total_tokens: 46,
-            completion_tokens_details: None,
-        },
-        "provider-usage",
-    );
-
-    assert_eq!(estimate.prompt_tokens, 34);
-    assert_eq!(estimate.total_tokens, Some(46));
-    assert_eq!(estimate.kind, TokenEstimateKind::ProviderReported);
-    assert_eq!(estimate.source.as_deref(), Some("provider-usage"));
 }

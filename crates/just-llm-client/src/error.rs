@@ -16,10 +16,6 @@ pub enum Capability {
     ModelCatalog,
     /// Balance or quota inspection.
     Balance,
-    /// Prompt-context metrics inspection.
-    ContextMetrics,
-    /// Token estimation without execution.
-    TokenEstimation,
 }
 
 impl fmt::Display for Capability {
@@ -29,8 +25,6 @@ impl fmt::Display for Capability {
             Self::StreamingChatCompletion => "streaming chat completion",
             Self::ModelCatalog => "model catalog",
             Self::Balance => "balance",
-            Self::ContextMetrics => "context metrics",
-            Self::TokenEstimation => "token estimation",
         };
 
         f.write_str(label)

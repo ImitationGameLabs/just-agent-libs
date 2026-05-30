@@ -54,8 +54,8 @@ pub mod tools;
 pub mod types;
 
 pub use capability::{
-    Balance, CapabilityNegotiation, ChatCompletion, ChatCompletionStream, ContextMetrics,
-    Identifiable, ModelCatalog, StreamingChatCompletion, TokenEstimation,
+    Balance, CapabilityNegotiation, ChatCompletion, ChatCompletionStream, Identifiable,
+    ModelCatalog, StreamingChatCompletion,
 };
 pub use error::{Capability, LlmError};
 pub use just_common::error::TransportError;

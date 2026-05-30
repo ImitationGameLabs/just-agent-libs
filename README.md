@@ -6,11 +6,11 @@ Not an agent framework, not a platform — just the LLM client. Minimal, well-ab
 
 ### Provider-neutral client — `just-llm-client`
 
-A lightweight, provider-neutral abstraction that sits on top of the provider SDKs. Use it when you want one code path that can target multiple providers, or when you want prepared requests, token estimation, and capability negotiation.
+A lightweight, provider-neutral abstraction that sits on top of the provider SDKs. Use it when you want one code path that can target multiple providers, or when you want prepared requests and capability negotiation.
 
-- **Capability-oriented traits.** Each operation is its own trait — `ChatCompletion`, `StreamingChatCompletion`, `ModelCatalog`, `Balance`, `TokenEstimation`. Backends implement only what they support.
+- **Capability-oriented traits.** Each operation is its own trait — `ChatCompletion`, `StreamingChatCompletion`, `ModelCatalog`, `Balance`. Backends implement only what they support.
 - **Explicit capability negotiation.** Optional capabilities are requested upfront — unsupported backends fail immediately, not at call time.
-- **Prepared requests.** Build, inspect, estimate token usage, then execute.
+- **Prepared requests.** Build, inspect, then execute.
 - **Optional tool runtime.** Enable `tools` for the local executable-tool runtime plus the built-in PTY-backed shell/session tools that compose into tool-calling loops.
 ```rust
 use just_llm_client::{

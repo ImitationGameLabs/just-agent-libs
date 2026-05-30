@@ -9,7 +9,7 @@ members = [
 resolver = "3"
 
 [workspace.package]
-version = "0.0.0" # placeholder, has no practical effect; crates carry independent versions
+version = "0.0.0"                                                   # placeholder, has no practical effect; crates carry independent versions
 license = "MIT"
 repository = "https://github.com/ImitationGameLabs/just-agent-libs"
 rust-version = "1.86"
@@ -41,5 +41,4 @@ thiserror = "2.0.18"
 tokio = { version = "1.52.1", features = ["macros", "rt-multi-thread"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-tokenx-rs = "0.1.0"
 wiremock = "0.6.5"

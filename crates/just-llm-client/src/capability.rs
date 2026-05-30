@@ -8,10 +8,8 @@ use crate::{
     types::{
         balance::BalanceSnapshot,
         chat::{ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse},
-        context::{ContextMetricsRequest, ContextMetricsResult},
         model::ModelCatalogResponse,
         prepared::PreparedChatRequest,
-        token::TokenEstimate,
     },
 };
 
@@ -84,28 +82,6 @@ pub trait Balance: Identifiable {
     async fn get_balance(&self) -> Result<BalanceSnapshot, LlmError>;
 }
 
-/// Estimate token usage without executing a request.
-#[async_trait]
-pub trait TokenEstimation: Identifiable {
-    /// Estimates prompt-token usage for a prepared request.
-    ///
-    /// Adapters may return approximate values when exact provider accounting is unavailable.
-    async fn estimate_tokens(
-        &self,
-        request: &PreparedChatRequest,
-    ) -> Result<TokenEstimate, LlmError>;
-}
-
-/// Report prompt-context limits or estimates.
-#[async_trait]
-pub trait ContextMetrics: Identifiable {
-    /// Returns context metrics for the supplied request shape when the adapter can provide them.
-    async fn context_metrics(
-        &self,
-        request: ContextMetricsRequest,
-    ) -> Result<ContextMetricsResult, LlmError>;
-}
-
 /// Explicit capability negotiation for runtime-selected or otherwise abstract backends.
 ///
 /// Each successful negotiation returns a handle that only exposes the requested behavior. If a
@@ -125,22 +101,6 @@ pub trait CapabilityNegotiation: Identifiable {
         Err(LlmError::unsupported(
             self.backend_id(),
             Capability::Balance,
-        ))
-    }
-
-    /// Returns a handle for token estimation when the backend supports it.
-    fn token_estimation(&self) -> Result<&dyn TokenEstimation, LlmError> {
-        Err(LlmError::unsupported(
-            self.backend_id(),
-            Capability::TokenEstimation,
-        ))
-    }
-
-    /// Returns a handle for context metrics when the backend supports it.
-    fn context_metrics(&self) -> Result<&dyn ContextMetrics, LlmError> {
-        Err(LlmError::unsupported(
-            self.backend_id(),
-            Capability::ContextMetrics,
         ))
     }
 }
