@@ -8,7 +8,11 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 keywords = ["sse", "http-client", "openai"]
-categories = ["web-programming::http-client", "asynchronous", "parser-implementations"]
+categories = [
+  "web-programming::http-client",
+  "asynchronous",
+  "parser-implementations",
+]
 
 [dependencies]
 async-stream = { workspace = true }
