@@ -15,7 +15,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let model = common::expect_env("JUST_LLM_OPENAI_COMPAT_MODEL");
     let prompt = "Say hello in one sentence.";
 
-    let backend = OpenAiCompatBackend::with_base_url(api_key, base_url)?;
+    let backend = OpenAiCompatBackend::new(
+        just_openai_compat::OpenAiCompatClient::builder()
+            .api_key(api_key)
+            .base_url(base_url)
+            .build()?,
+    );
 
     println!("--- request 1 ---");
     println!("  [system] You are a concise assistant.");

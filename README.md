@@ -18,7 +18,10 @@ use just_llm_client::{
     types::chat::{ChatCompletionRequest, ChatMessage},
 };
 
-let backend = DeepSeekBackend::with_config(just_deepseek::DeepSeekConfig::new("your-api-key"))?;
+let client = just_deepseek::DeepSeekClient::builder()
+    .api_key("your-api-key")
+    .build()?;
+let backend = DeepSeekBackend::new(client);
 let response = backend.create_chat_completion(
     ChatCompletionRequest::new(
         "deepseek-v4-flash",
@@ -80,7 +83,9 @@ Bindings for OpenAI, Google, xAI, Anthropic, and others are planned but deferred
 ```rust
 use just_deepseek::{DeepSeekClient, types::chat::{ChatMessage, CreateChatCompletionRequest}};
 
-let client = DeepSeekClient::new("your-api-key")?;
+let client = DeepSeekClient::builder()
+    .api_key("your-api-key")
+    .build()?;
 let response = client.create_chat_completion(
     CreateChatCompletionRequest::new(
         "deepseek-v4-flash",

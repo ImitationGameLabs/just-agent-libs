@@ -40,14 +40,13 @@ impl ProviderEntry for DeepSeekProvider {
     }
 
     fn connect(&self) -> Result<Arc<dyn LlmBackend>, LlmError> {
-        match &self.base_url {
-            Some(url) => Ok(Arc::new(DeepSeekBackend::with_base_url(
-                &self.api_key,
-                url,
-            )?)),
-            None => Ok(Arc::new(DeepSeekBackend::with_config(
-                just_deepseek::DeepSeekConfig::new(&self.api_key),
-            )?)),
+        let mut builder = just_deepseek::DeepSeekClient::builder().api_key(&self.api_key);
+        if let Some(url) = &self.base_url {
+            builder = builder.base_url(url);
         }
+        let client = builder
+            .build()
+            .map_err(|source| LlmError::backend("deepseek", source))?;
+        Ok(Arc::new(DeepSeekBackend::new(client)))
     }
 }

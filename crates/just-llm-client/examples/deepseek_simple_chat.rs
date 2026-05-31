@@ -15,10 +15,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let model = common::expect_env("JUST_LLM_DEEPSEEK_MODEL");
     let prompt = "Say hello in one sentence.";
 
-    let backend = match base_url {
-        Some(base_url) => DeepSeekBackend::with_base_url(api_key, base_url)?,
-        None => DeepSeekBackend::with_config(just_deepseek::DeepSeekConfig::new(api_key))?,
-    };
+    let mut builder = just_deepseek::DeepSeekClient::builder().api_key(api_key);
+    if let Some(url) = &base_url {
+        builder = builder.base_url(url);
+    }
+    let backend = DeepSeekBackend::new(builder.build()?);
 
     println!("--- request 1 ---");
     println!("  [system] You are a concise assistant.");

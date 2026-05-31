@@ -29,12 +29,22 @@ use wiremock::{
 
 #[cfg(feature = "deepseek")]
 fn deepseek_backend(server: &MockServer) -> DeepSeekBackend {
-    DeepSeekBackend::with_base_url("test-key", server.uri()).unwrap()
+    let client = just_deepseek::DeepSeekClient::builder()
+        .api_key("test-key")
+        .base_url(server.uri())
+        .build()
+        .unwrap();
+    DeepSeekBackend::new(client)
 }
 
 #[cfg(feature = "openai-compat")]
 fn openai_backend(server: &MockServer) -> OpenAiCompatBackend {
-    OpenAiCompatBackend::with_base_url("test-key", server.uri()).unwrap()
+    let client = just_openai_compat::OpenAiCompatClient::builder()
+        .api_key("test-key")
+        .base_url(server.uri())
+        .build()
+        .unwrap();
+    OpenAiCompatBackend::new(client)
 }
 
 // --- DeepSeek tests ---

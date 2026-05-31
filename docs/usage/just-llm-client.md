@@ -82,11 +82,12 @@ use just_llm_client::{
 };
 
 #[tokio::main]
-async fn main() -> Result<(), just_llm_client::LlmError> {
-    let backend = OpenAiCompatBackend::with_base_url(
-        "your-api-key",
-        "https://your-compatible-endpoint/v1",
-    )?;
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let client = just_openai_compat::OpenAiCompatClient::builder()
+        .api_key("your-api-key")
+        .base_url("https://your-compatible-endpoint/v1")
+        .build()?;
+    let backend = OpenAiCompatBackend::new(client);
 
     let prepared = backend
         .prepared_request(

@@ -28,7 +28,9 @@ use just_deepseek::{
 
 #[tokio::main]
 async fn main() -> Result<(), just_deepseek::Error> {
-    let client = DeepSeekClient::new("your-api-key")?;
+    let client = DeepSeekClient::builder()
+        .api_key("your-api-key")
+        .build()?;
 
     let request = CreateChatCompletionRequest::new(
         "deepseek-v4-pro",
@@ -55,7 +57,9 @@ use futures_util::StreamExt;
 
 #[tokio::main]
 async fn main() -> Result<(), just_deepseek::Error> {
-    let client = DeepSeekClient::new("your-api-key")?;
+    let client = DeepSeekClient::builder()
+        .api_key("your-api-key")
+        .build()?;
     let request = CreateChatCompletionRequest::new(
         "deepseek-v4-pro",
         vec![ChatMessage::user("Stream a short answer.")],

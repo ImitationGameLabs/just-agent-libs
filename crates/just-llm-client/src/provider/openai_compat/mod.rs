@@ -6,8 +6,8 @@
 //! during negotiation because the generic OpenAI-compatible API does not expose a balance
 //! endpoint.
 //!
-//! Construct via [`OpenAiCompatBackend::with_config`] or [`OpenAiCompatBackend::with_base_url`],
-//! or let [`OpenAiCompatProvider`](crate::OpenAiCompatProvider) build one through the registry.
+//! Construct via [`OpenAiCompatBackend::new`] with a pre-built SDK client, or let
+//! [`OpenAiCompatProvider`](crate::OpenAiCompatProvider) build one through the registry.
 
 mod conversions;
 
@@ -41,25 +41,6 @@ impl OpenAiCompatBackend {
     /// Wraps an existing OpenAI-compatible client.
     pub fn new(client: just_openai_compat::OpenAiCompatClient) -> Self {
         Self { client }
-    }
-
-    /// Builds a backend adapter from an OpenAI-compatible configuration value.
-    pub fn with_config(config: just_openai_compat::OpenAiCompatConfig) -> Result<Self, LlmError> {
-        let client = just_openai_compat::OpenAiCompatClient::with_config(config)
-            .map_err(|source| LlmError::backend("openai-compatible", source))?;
-
-        Ok(Self::new(client))
-    }
-
-    /// Builds a backend adapter from an API key and custom base URL.
-    pub fn with_base_url(
-        api_key: impl Into<String>,
-        base_url: impl Into<String>,
-    ) -> Result<Self, LlmError> {
-        let client = just_openai_compat::OpenAiCompatClient::new(api_key, base_url)
-            .map_err(|source| LlmError::backend("openai-compatible", source))?;
-
-        Ok(Self::new(client))
     }
 }
 

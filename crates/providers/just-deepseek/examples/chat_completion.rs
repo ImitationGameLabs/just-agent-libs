@@ -18,10 +18,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let model = expect_env("JUST_LLM_DEEPSEEK_MODEL");
     let prompt = "Say hello in one sentence.";
 
-    let client = match base_url {
-        Some(base_url) => DeepSeekClient::with_base_url(api_key, base_url)?,
-        None => DeepSeekClient::new(api_key)?,
-    };
+    let mut builder = DeepSeekClient::builder().api_key(api_key);
+    if let Some(url) = base_url {
+        builder = builder.base_url(url);
+    }
+    let client = builder.build()?;
 
     let request = CreateChatCompletionRequest::new(
         model,

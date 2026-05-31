@@ -1,15 +1,21 @@
+use std::time::Duration;
+
+use just_common::error::TransportError;
 use just_common::transport::http;
 use reqwest::Method;
 use serde::{Serialize, de::DeserializeOwned};
 
 use crate::{
-    ChatCompletionStream, DeepSeekConfig, Error,
+    ChatCompletionStream, Error,
     types::{
         balance::GetUserBalanceResponse,
         chat::{ChatCompletion, CreateChatCompletionRequest},
         models::ListModelsResponse,
     },
 };
+
+const DEFAULT_BASE_URL: &str = "https://api.deepseek.com";
+const DEFAULT_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// Async DeepSeek API client.
 #[derive(Clone, Debug)]
@@ -18,27 +24,17 @@ pub struct DeepSeekClient {
     base_url: String,
 }
 
+/// Builder for [`DeepSeekClient`].
+pub struct DeepSeekClientBuilder {
+    api_key: Option<String>,
+    base_url: Option<String>,
+    http_builder: Option<reqwest::ClientBuilder>,
+}
+
 impl DeepSeekClient {
-    /// Creates a client with default DeepSeek configuration.
-    pub fn new(api_key: impl Into<String>) -> Result<Self, Error> {
-        Self::with_config(DeepSeekConfig::new(api_key))
-    }
-
-    /// Creates a client with a custom base URL.
-    pub fn with_base_url(
-        api_key: impl Into<String>,
-        base_url: impl Into<String>,
-    ) -> Result<Self, Error> {
-        Self::with_config(DeepSeekConfig::new(api_key).with_base_url(base_url))
-    }
-
-    /// Creates a client from a validated configuration value.
-    pub fn with_config(config: DeepSeekConfig) -> Result<Self, Error> {
-        config.validate()?;
-        let http =
-            http::build_http_client(config.api_key(), config.timeout(), config.user_agent())?;
-
-        Ok(Self { http, base_url: config.base_url().trim_end_matches('/').to_owned() })
+    /// Returns a builder for constructing a new client.
+    pub fn builder() -> DeepSeekClientBuilder {
+        DeepSeekClientBuilder { api_key: None, base_url: None, http_builder: None }
     }
 
     /// Executes a non-streaming chat completion request.
@@ -105,5 +101,85 @@ impl DeepSeekClient {
         Req: Serialize + ?Sized,
     {
         Ok(http::request::<Req>(&self.http, &self.base_url, method, path, body).await?)
+    }
+}
+
+impl DeepSeekClientBuilder {
+    /// Sets the API key (required).
+    pub fn api_key(mut self, key: impl Into<String>) -> Self {
+        self.api_key = Some(key.into());
+        self
+    }
+
+    /// Sets a custom base URL. Defaults to `https://api.deepseek.com`.
+    pub fn base_url(mut self, url: impl Into<String>) -> Self {
+        self.base_url = Some(url.into());
+        self
+    }
+
+    /// Provides a custom `reqwest::ClientBuilder`.
+    ///
+    /// Defaults to `reqwest::Client::builder().timeout(60s).use_rustls_tls()`.
+    /// The library injects Bearer auth headers before building.
+    pub fn http_client(mut self, builder: reqwest::ClientBuilder) -> Self {
+        self.http_builder = Some(builder);
+        self
+    }
+
+    /// Builds the client, validating required fields.
+    pub fn build(self) -> Result<DeepSeekClient, Error> {
+        let api_key = self.api_key.ok_or_else(|| {
+            Error::Transport(TransportError::InvalidConfig("api key is required"))
+        })?;
+
+        if api_key.trim().is_empty() {
+            return Err(Error::Transport(TransportError::InvalidConfig(
+                "api key cannot be empty",
+            )));
+        }
+
+        let base_url = self.base_url.unwrap_or_else(|| DEFAULT_BASE_URL.to_owned());
+
+        if base_url.trim().is_empty() {
+            return Err(Error::Transport(TransportError::InvalidConfig(
+                "base url cannot be empty",
+            )));
+        }
+
+        let builder = self.http_builder.unwrap_or_else(|| {
+            reqwest::Client::builder()
+                .timeout(DEFAULT_TIMEOUT)
+                .use_rustls_tls()
+        });
+
+        let http = http::build_client(builder, &api_key)?;
+
+        Ok(DeepSeekClient { http, base_url: base_url.trim_end_matches('/').to_owned() })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_missing_api_key() {
+        let error = DeepSeekClient::builder().build().unwrap_err();
+        assert!(matches!(
+            error,
+            Error::Transport(TransportError::InvalidConfig("api key is required"))
+        ));
+    }
+
+    #[test]
+    fn rejects_empty_api_key() {
+        let error = DeepSeekClient::builder()
+            .api_key("   ")
+            .build()
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            Error::Transport(TransportError::InvalidConfig("api key cannot be empty"))
+        ));
     }
 }

@@ -19,7 +19,10 @@ use just_openai_compat::{
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let client = OpenAiCompatClient::new("your-api-key", "https://api.example.com/v1")?;
+    let client = OpenAiCompatClient::builder()
+        .api_key("your-api-key")
+        .base_url("https://api.example.com/v1")
+        .build()?;
 
     let request = CreateChatCompletionRequest::new(
         "gpt-4o",

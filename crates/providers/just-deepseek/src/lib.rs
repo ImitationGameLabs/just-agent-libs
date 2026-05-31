@@ -6,13 +6,12 @@
 #![warn(missing_docs)]
 
 mod client;
-mod config;
 mod error;
 mod stream;
 pub mod types;
 
 pub use client::DeepSeekClient;
-pub use config::DeepSeekConfig;
+pub use client::DeepSeekClientBuilder;
 pub use error::Error;
 pub use just_common as common;
 pub use stream::ChatCompletionStream;

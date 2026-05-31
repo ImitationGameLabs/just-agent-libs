@@ -1,7 +1,5 @@
 //! Shared HTTP transport helpers for OpenAI-like providers.
 
-use std::time::Duration;
-
 use reqwest::{
     Method, Response,
     header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue},
@@ -10,11 +8,13 @@ use serde::{Serialize, de::DeserializeOwned};
 
 use crate::error::TransportError;
 
-/// Builds a `reqwest` client with Bearer auth and common defaults.
-pub fn build_http_client(
+/// Applies Bearer auth and JSON accept headers to a caller-provided builder, then builds.
+///
+/// Use this when you need to customise TLS, proxy, connection pool, or other transport
+/// settings but still want the library to manage authentication headers.
+pub fn build_client(
+    builder: reqwest::ClientBuilder,
     api_key: &str,
-    timeout: Duration,
-    user_agent: Option<&str>,
 ) -> Result<reqwest::Client, TransportError> {
     let mut default_headers = HeaderMap::new();
     let auth_value = HeaderValue::from_str(&format!("Bearer {api_key}"))
@@ -22,16 +22,10 @@ pub fn build_http_client(
     default_headers.insert(AUTHORIZATION, auth_value);
     default_headers.insert(ACCEPT, HeaderValue::from_static("application/json"));
 
-    let mut builder = reqwest::Client::builder()
+    builder
         .default_headers(default_headers)
-        .timeout(timeout)
-        .use_rustls_tls();
-
-    if let Some(user_agent) = user_agent {
-        builder = builder.user_agent(user_agent);
-    }
-
-    builder.build().map_err(TransportError::BuildClient)
+        .build()
+        .map_err(TransportError::BuildClient)
 }
 
 /// Executes a JSON request and deserializes the response body.

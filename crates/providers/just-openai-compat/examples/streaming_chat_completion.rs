@@ -18,7 +18,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let base_url = expect_env("JUST_LLM_OPENAI_COMPAT_BASE_URL");
     let model = expect_env("JUST_LLM_OPENAI_COMPAT_MODEL");
 
-    let client = OpenAiCompatClient::new(api_key, base_url)?;
+    let client = OpenAiCompatClient::builder()
+        .api_key(api_key)
+        .base_url(base_url)
+        .build()?;
 
     let mut request = CreateChatCompletionRequest::new(
         model,

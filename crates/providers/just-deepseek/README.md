@@ -19,7 +19,9 @@ use just_deepseek::{
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let client = DeepSeekClient::new("your-api-key")?;
+    let client = DeepSeekClient::builder()
+        .api_key("your-api-key")
+        .build()?;
 
     let request = CreateChatCompletionRequest::new(
         "deepseek-chat",

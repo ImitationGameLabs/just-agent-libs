@@ -4,8 +4,8 @@
 //! capability traits ([`ChatCompletion`](crate::ChatCompletion), [`Balance`](crate::Balance),
 //! etc.) so it can be used through [`LlmBackend`](crate::LlmBackend) or directly.
 //!
-//! Construct via [`DeepSeekBackend::with_config`] or [`DeepSeekBackend::with_base_url`],
-//! or let [`DeepSeekProvider`](crate::DeepSeekProvider) build one through the registry.
+//! Construct via [`DeepSeekBackend::new`] with a pre-built SDK client, or let
+//! [`DeepSeekProvider`](crate::DeepSeekProvider) build one through the registry.
 
 mod conversions;
 use async_trait::async_trait;
@@ -39,25 +39,6 @@ impl DeepSeekBackend {
     /// Wraps an existing DeepSeek client.
     pub fn new(client: just_deepseek::DeepSeekClient) -> Self {
         Self { client }
-    }
-
-    /// Builds a backend adapter from a DeepSeek configuration value.
-    pub fn with_config(config: just_deepseek::DeepSeekConfig) -> Result<Self, LlmError> {
-        let client = just_deepseek::DeepSeekClient::with_config(config)
-            .map_err(|source| LlmError::backend("deepseek", source))?;
-
-        Ok(Self::new(client))
-    }
-
-    /// Builds a backend adapter from an API key and custom base URL.
-    pub fn with_base_url(
-        api_key: impl Into<String>,
-        base_url: impl Into<String>,
-    ) -> Result<Self, LlmError> {
-        let client = just_deepseek::DeepSeekClient::with_base_url(api_key, base_url)
-            .map_err(|source| LlmError::backend("deepseek", source))?;
-
-        Ok(Self::new(client))
     }
 }
 

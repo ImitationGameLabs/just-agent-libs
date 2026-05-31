@@ -20,9 +20,10 @@ use just_llm_client::{
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let backend = DeepSeekBackend::with_config(
-        just_deepseek::DeepSeekConfig::new("your-api-key"),
-    )?;
+    let client = just_deepseek::DeepSeekClient::builder()
+        .api_key("your-api-key")
+        .build()?;
+    let backend = DeepSeekBackend::new(client);
 
     let response = backend
         .create_chat_completion(

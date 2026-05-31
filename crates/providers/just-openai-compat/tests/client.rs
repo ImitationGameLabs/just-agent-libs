@@ -11,7 +11,20 @@ use wiremock::{
 };
 
 fn client(server: &MockServer) -> OpenAiCompatClient {
-    OpenAiCompatClient::new("test-key", server.uri()).unwrap()
+    OpenAiCompatClient::builder()
+        .api_key("test-key")
+        .base_url(server.uri())
+        .build()
+        .unwrap()
+}
+
+fn client_with_http(server: &MockServer) -> OpenAiCompatClient {
+    OpenAiCompatClient::builder()
+        .api_key("test-key")
+        .base_url(server.uri())
+        .http_client(reqwest::Client::builder())
+        .build()
+        .unwrap()
 }
 
 fn basic_request() -> CreateChatCompletionRequest {
@@ -92,7 +105,10 @@ async fn creates_non_streaming_chat_completion() {
 async fn rejects_stream_flag_on_non_stream_method() {
     let request = CreateChatCompletionRequest { stream: Some(true), ..basic_request() };
 
-    let error = OpenAiCompatClient::new("test-key", "http://localhost")
+    let error = OpenAiCompatClient::builder()
+        .api_key("test-key")
+        .base_url("http://localhost")
+        .build()
         .unwrap()
         .create_chat_completion(request)
         .await
@@ -233,4 +249,27 @@ async fn error_display_does_not_dump_raw_response_body() {
     let error = client(&server).list_models().await.unwrap_err();
 
     assert!(!error.to_string().contains("sensitive response body"));
+}
+
+#[tokio::test]
+async fn lists_models_via_injected_http_client() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/models"))
+        .and(header("authorization", "Bearer test-key"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "object": "list",
+            "data": [
+                {
+                    "id": "gpt-4.1-mini",
+                    "object": "model",
+                    "owned_by": "openai-compatible"
+                }
+            ]
+        })))
+        .mount(&server)
+        .await;
+
+    let response = client_with_http(&server).list_models().await.unwrap();
+    assert_eq!(response.data[0].id, "gpt-4.1-mini");
 }
