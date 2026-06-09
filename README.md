@@ -8,13 +8,13 @@ Not an agent framework, not a platform — just the LLM client. Minimal, well-ab
 
 A lightweight, provider-neutral abstraction that sits on top of the provider SDKs. Use it when you want one code path that can target multiple providers, or when you want prepared requests and capability negotiation.
 
-- **Capability-oriented traits.** Each operation is its own trait — `ChatCompletion`, `StreamingChatCompletion`, `ModelCatalog`, `Balance`. Backends implement only what they support.
+- **Capability-oriented traits.** Each operation is its own trait — `ModelCatalog`, `Balance`. Backends implement only what they support, with chat completion provided by the unified `LlmBackend` trait.
 - **Explicit capability negotiation.** Optional capabilities are requested upfront — unsupported backends fail immediately, not at call time.
 - **Prepared requests.** Build, inspect, then execute.
 - **Optional tool runtime.** Enable `tools` for the local executable-tool runtime plus the built-in PTY-backed shell/session tools that compose into tool-calling loops.
 ```rust
 use just_llm_client::{
-    ChatCompletion, provider::DeepSeekBackend,
+    provider::{DeepSeekBackend, LlmBackend},
     types::chat::{ChatCompletionRequest, ChatMessage},
 };
 
@@ -38,7 +38,7 @@ just-llm-client = { version = "...", features = ["openai-compat", "tools"] }
 
 #### Bring your own backend
 
-just-agent-libs aims to support more model providers over time. But if your provider is not yet covered, or you are a model provider with a custom API that does not follow any well-known protocol, you can easily build your own backend by implementing the capability traits. `LlmBackend` is a convenience trait that requires `Identifiable + ChatCompletion + StreamingChatCompletion + CapabilityNegotiation`. Implement the core traits, then opt into optional capabilities by overriding the default `CapabilityNegotiation` methods:
+just-agent-libs aims to support more model providers over time. But if your provider is not yet covered, or you are a model provider with a custom API that does not follow any well-known protocol, you can easily build your own backend by implementing the `LlmBackend` trait. It requires `Identifiable + CapabilityNegotiation + Send + Sync` and four core methods — `prepare`, `send`, `prepare_streaming`, `send_streaming` — with convenience methods (`chat_completion`, `stream_chat_completion`) provided by default:
 
 ```rust
 struct MyBackend { /* ... */ }
@@ -49,22 +49,19 @@ impl Identifiable for MyBackend {
 }
 
 #[async_trait]
-impl ChatCompletion for MyBackend {
-    async fn chat_completion(
-        &self, request: ChatCompletionRequest,
-    ) -> Result<ChatCompletionResponse, LlmError> { /* ... */ }
+impl LlmBackend for MyBackend {
+    fn prepare(&self, request: ChatCompletionRequest)
+        -> Result<PreparedChatRequest, LlmError> { /* ... */ }
 
-    async fn prepared_request(
-        &self, request: ChatCompletionRequest,
-    ) -> Result<PreparedChatRequest, LlmError> { /* ... */ }
+    async fn send(&self, prepared: &PreparedChatRequest)
+        -> Result<ChatCompletionResponse, LlmError> { /* ... */ }
 
-    async fn send_prepared(
-        &self, request: &PreparedChatRequest,
-    ) -> Result<ChatCompletionResponse, LlmError> { /* ... */ }
+    fn prepare_streaming(&self, request: ChatCompletionRequest)
+        -> Result<PreparedChatRequest, LlmError> { /* ... */ }
+
+    async fn send_streaming(&self, prepared: &PreparedChatRequest)
+        -> Result<ChatCompletionStream, LlmError> { /* ... */ }
 }
-
-// Implement StreamingChatCompletion similarly, then:
-// MyBackend now satisfies LlmBackend automatically.
 ```
 
 The validation module (`just_llm_client::provider::validation`) provides reusable helpers for building custom backends.
