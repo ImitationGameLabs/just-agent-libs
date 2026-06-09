@@ -106,7 +106,9 @@ impl LlmBackend for OpenAiCompatBackend {
             .send_streaming(prepared.inner())
             .await
             .map_err(|source| LlmError::backend(self.backend_id(), source))?;
-        Ok(Box::pin(stream.map(|chunk| chunk.map(Into::into))))
+        Ok(ChatCompletionStream::new(Box::pin(
+            stream.map(|chunk| chunk.map(Into::into)),
+        )))
     }
 }
 

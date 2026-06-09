@@ -92,7 +92,7 @@ impl LlmBackend for TestBackend {
         &self,
         _prepared: &PreparedChatRequest,
     ) -> Result<ChatCompletionStream, LlmError> {
-        Ok(Box::pin(stream::empty()))
+        Ok(ChatCompletionStream::new(Box::pin(stream::empty())))
     }
 }
 
