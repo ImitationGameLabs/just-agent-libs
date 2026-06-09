@@ -7,12 +7,13 @@
 #![warn(missing_docs)]
 
 mod client;
+mod client_builder;
 mod error;
 mod stream;
 pub mod types;
 
 pub use client::OpenAiCompatClient;
-pub use client::OpenAiCompatClientBuilder;
+pub use client_builder::OpenAiCompatClientBuilder;
 pub use error::Error;
 pub use just_common as common;
 pub use just_common::prepared::PreparedChatRequest;
