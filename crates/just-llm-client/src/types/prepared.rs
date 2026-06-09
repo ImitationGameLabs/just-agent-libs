@@ -1,10 +1,10 @@
-use serde::{Deserialize, Deserializer, Serialize};
+use reqwest::header::HeaderMap;
 use serde_json::Value;
 
 use crate::error::LlmError;
 
 /// Lightweight summary of a prepared request.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PreparedChatRequestPreview {
     /// Number of tools declared in the serialized payload.
     pub tool_count: u32,
@@ -12,24 +12,22 @@ pub struct PreparedChatRequestPreview {
     pub has_stream: bool,
     /// Whether the serialized payload requests a structured response format.
     pub has_response_format: bool,
+    /// Number of extra HTTP headers attached to this request.
+    pub extra_header_count: u32,
 }
 
 /// Backend-bound prepared chat request.
 ///
 /// The canonical source of truth is the serialized request body. Preview helpers derive from
-/// that same JSON payload so preview and execution cannot drift apart. Prepared requests stay as
-/// pure data so they can be serialized, persisted, or sent across process boundaries without
-/// carrying a live backend handle.
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+/// that same JSON payload so preview and execution cannot drift apart.
+///
+/// Extra HTTP headers can be attached via [`with_headers`](Self::with_headers) and will be
+/// merged on top of the backend client's default headers when the request is sent.
+#[derive(Clone, Debug)]
 pub struct PreparedChatRequest {
     backend_id: String,
     request_body: Value,
-}
-
-#[derive(Deserialize)]
-struct PreparedChatRequestRepr {
-    backend_id: String,
-    request_body: Value,
+    extra_headers: HeaderMap,
 }
 
 impl PreparedChatRequest {
@@ -40,7 +38,8 @@ impl PreparedChatRequest {
         backend_id: impl Into<String>,
         request_body: Value,
     ) -> Result<Self, LlmError> {
-        let request = Self { backend_id: backend_id.into(), request_body };
+        let request =
+            Self { backend_id: backend_id.into(), request_body, extra_headers: HeaderMap::new() };
         request.validate()?;
         Ok(request)
     }
@@ -70,6 +69,7 @@ impl PreparedChatRequest {
                 .map_or(0, |tools| tools.len().try_into().unwrap_or(u32::MAX)),
             has_stream: self.has_stream(),
             has_response_format: self.request_body.get("response_format").is_some(),
+            extra_header_count: self.extra_headers.len().try_into().unwrap_or(u32::MAX),
         }
     }
 
@@ -94,6 +94,22 @@ impl PreparedChatRequest {
     pub fn request_body_text(&self) -> String {
         serde_json::to_string(&self.request_body)
             .expect("serializing serde_json::Value is infallible")
+    }
+
+    /// Returns the extra HTTP headers attached to this request.
+    pub fn headers(&self) -> &HeaderMap {
+        &self.extra_headers
+    }
+
+    /// Returns a new prepared request with the given extra HTTP headers, replacing any
+    /// previously set extra headers.
+    ///
+    /// These headers are merged on top of the backend client's default headers (which include
+    /// `Authorization` and `Accept`) when the request is sent. If a header name matches one of
+    /// the defaults (e.g. `Authorization`), the value provided here takes precedence. This is
+    /// intentional to support per-request credentials in multi-tenant setups.
+    pub fn with_headers(self, headers: HeaderMap) -> Self {
+        Self { extra_headers: headers, ..self }
     }
 
     /// Verifies that this request is executed by the backend that prepared it.
@@ -132,16 +148,5 @@ impl PreparedChatRequest {
 
     fn messages_value(&self) -> Option<&Vec<Value>> {
         self.request_body.get("messages").and_then(Value::as_array)
-    }
-}
-
-impl<'de> Deserialize<'de> for PreparedChatRequest {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let repr = PreparedChatRequestRepr::deserialize(deserializer)?;
-        Self::from_request_body(repr.backend_id, repr.request_body)
-            .map_err(serde::de::Error::custom)
     }
 }

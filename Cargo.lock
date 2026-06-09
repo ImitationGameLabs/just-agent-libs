@@ -734,6 +734,7 @@ dependencies = [
  "just-common",
  "just-deepseek",
  "just-openai-compat",
+ "reqwest",
  "serde",
  "serde_json",
  "thiserror",

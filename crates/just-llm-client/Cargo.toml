@@ -21,6 +21,7 @@ async-trait = { workspace = true }
 just-common = { workspace = true }
 just-deepseek = { workspace = true, optional = true }
 futures-core = { workspace = true }
+reqwest = { workspace = true }
 futures-util = { workspace = true }
 just-openai-compat = { workspace = true, optional = true }
 serde = { workspace = true }

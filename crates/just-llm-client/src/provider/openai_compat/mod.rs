@@ -13,6 +13,7 @@ mod conversions;
 
 use async_trait::async_trait;
 use futures_util::StreamExt;
+use reqwest::Method;
 
 use crate::{
     capability::{
@@ -98,13 +99,14 @@ impl ChatCompletion for OpenAiCompatBackend {
         validate_prepared_non_streaming_request(request, "send_prepared", "send_prepared_stream")?;
         request.ensure_backend(self.backend_id())?;
 
-        let provider_request: just_openai_compat::types::chat::CreateChatCompletionRequest =
-            serde_json::from_value(request.request_body().clone())
-                .map_err(|source| LlmError::backend(self.backend_id(), source))?;
-
-        let response = self
+        let response: just_openai_compat::types::chat::ChatCompletion = self
             .client
-            .create_chat_completion(provider_request)
+            .send_raw_json(
+                Method::POST,
+                "/chat/completions",
+                request.request_body(),
+                request.headers(),
+            )
             .await
             .map_err(|source| LlmError::backend(self.backend_id(), source))?;
 
@@ -147,13 +149,18 @@ impl StreamingChatCompletion for OpenAiCompatBackend {
         validate_prepared_streaming_request(request, "send_prepared_stream", "send_prepared")?;
         request.ensure_backend(self.backend_id())?;
 
-        let provider_request: just_openai_compat::types::chat::CreateChatCompletionRequest =
-            serde_json::from_value(request.request_body().clone())
-                .map_err(|source| LlmError::backend(self.backend_id(), source))?;
-        let stream = self
+        let response = self
             .client
-            .stream_chat_completion(provider_request)
+            .stream_raw_json(
+                Method::POST,
+                "/chat/completions",
+                request.request_body(),
+                request.headers(),
+            )
             .await
+            .map_err(|source| LlmError::backend(self.backend_id(), source))?;
+
+        let stream = just_openai_compat::ChatCompletionStream::from_response(response)
             .map_err(|source| LlmError::backend(self.backend_id(), source))?;
         Ok(Box::pin(stream.map(|chunk| chunk.map(Into::into))))
     }

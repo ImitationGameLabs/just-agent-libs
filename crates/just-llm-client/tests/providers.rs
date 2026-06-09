@@ -255,6 +255,7 @@ async fn prepared_requests_can_be_previewed_and_executed() {
     assert_eq!(prepared.model(), Some("gpt-4.1-mini"));
     assert_eq!(prepared.message_count(), 1);
     assert_eq!(prepared.preview().tool_count, 0);
+    assert_eq!(prepared.preview().extra_header_count, 0);
     assert!(prepared.request_body_text().contains("\"messages\""));
 
     let response = backend.send_prepared(&prepared).await.unwrap();
@@ -297,13 +298,15 @@ async fn prepared_requests_round_trip_and_execute_through_backend() {
         .await
         .unwrap();
 
-    let serialized = serde_json::to_string(&prepared).unwrap();
-    let deserialized: just_llm_client::types::prepared::PreparedChatRequest =
-        serde_json::from_str(&serialized).unwrap();
-    let response = backend.send_prepared(&deserialized).await.unwrap();
+    // Verify field accessors are consistent.
+    assert_eq!(prepared.backend_id(), "openai-compatible");
+    assert_eq!(prepared.model(), Some("gpt-4.1-mini"));
+    assert_eq!(prepared.message_count(), 1);
+    assert!(!prepared.has_stream());
+    assert_eq!(prepared.headers().len(), 0);
 
-    assert_eq!(deserialized, prepared);
-    assert_eq!(deserialized.preview(), prepared.preview());
+    let response = backend.send_prepared(&prepared).await.unwrap();
+
     assert_eq!(response.first_choice_content(), Some("round trip"));
 }
 
@@ -374,14 +377,11 @@ async fn prepared_streaming_requests_can_be_previewed_and_executed() {
         ))
         .await
         .unwrap();
-    let serialized = serde_json::to_string(&prepared).unwrap();
-    let deserialized: just_llm_client::types::prepared::PreparedChatRequest =
-        serde_json::from_str(&serialized).unwrap();
 
     assert!(prepared.has_stream());
-    assert_eq!(deserialized, prepared);
+    assert_eq!(prepared.headers().len(), 0);
 
-    let mut stream = backend.send_prepared_stream(&deserialized).await.unwrap();
+    let mut stream = backend.send_prepared_stream(&prepared).await.unwrap();
     let first = stream.next().await.unwrap().unwrap();
 
     assert_eq!(first.choices[0].delta.content.as_deref(), Some("hi"));
@@ -547,11 +547,126 @@ async fn prepared_requests_reject_cross_backend_execution() {
 // --- Provider-agnostic tests ---
 
 #[test]
-fn prepared_requests_reject_invalid_deserialization_payloads() {
-    let error = serde_json::from_str::<just_llm_client::types::prepared::PreparedChatRequest>(
-        r#"{"backend_id":"openai-compatible","request_body":{"model":"gpt-4.1-mini"}}"#,
+fn prepared_requests_reject_invalid_payloads() {
+    use just_llm_client::types::prepared::PreparedChatRequest;
+    use serde_json::json;
+
+    // Missing messages array.
+    let error = PreparedChatRequest::from_request_body(
+        "openai-compatible",
+        json!({"model": "gpt-4.1-mini"}),
     )
     .unwrap_err();
 
     assert!(error.to_string().contains("messages array"));
+
+    // Missing model field.
+    let error = PreparedChatRequest::from_request_body(
+        "openai-compatible",
+        json!({"messages": [{"role": "user", "content": "hi"}]}),
+    )
+    .unwrap_err();
+
+    assert!(error.to_string().contains("model field"));
+
+    // Body is not a JSON object.
+    let error = PreparedChatRequest::from_request_body("openai-compatible", json!(42)).unwrap_err();
+
+    assert!(error.to_string().contains("JSON object"));
+}
+
+// --- Extra headers tests ---
+
+#[cfg(feature = "openai-compat")]
+#[tokio::test]
+async fn prepared_requests_send_extra_headers_to_backend() {
+    use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
+
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .and(wiremock::matchers::header("x-trace-id", "test-trace-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "chatcmpl-hdr",
+            "object": "chat.completion",
+            "created": 1,
+            "model": "gpt-4.1-mini",
+            "choices": [
+                {
+                    "index": 0,
+                    "finish_reason": "stop",
+                    "message": {
+                        "role": "assistant",
+                        "content": "with headers"
+                    }
+                }
+            ]
+        })))
+        .mount(&server)
+        .await;
+
+    let backend = openai_backend(&server);
+
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        HeaderName::from_static("x-trace-id"),
+        HeaderValue::from_static("test-trace-123"),
+    );
+
+    let prepared = backend
+        .prepared_request(ChatCompletionRequest::new(
+            "gpt-4.1-mini",
+            vec![ChatMessage::user("hello")],
+        ))
+        .await
+        .unwrap()
+        .with_headers(headers);
+
+    assert_eq!(prepared.headers().len(), 1);
+    assert_eq!(prepared.preview().extra_header_count, 1);
+
+    let response = backend.send_prepared(&prepared).await.unwrap();
+    assert_eq!(response.first_choice_content(), Some("with headers"));
+}
+
+#[cfg(feature = "openai-compat")]
+#[tokio::test]
+async fn prepared_requests_work_without_extra_headers() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "chatcmpl-nohdr",
+            "object": "chat.completion",
+            "created": 1,
+            "model": "gpt-4.1-mini",
+            "choices": [
+                {
+                    "index": 0,
+                    "finish_reason": "stop",
+                    "message": {
+                        "role": "assistant",
+                        "content": "no headers"
+                    }
+                }
+            ]
+        })))
+        .mount(&server)
+        .await;
+
+    let backend = openai_backend(&server);
+    let prepared = backend
+        .prepared_request(ChatCompletionRequest::new(
+            "gpt-4.1-mini",
+            vec![ChatMessage::user("hello")],
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(prepared.headers().len(), 0);
+
+    let response = backend.send_prepared(&prepared).await.unwrap();
+    assert_eq!(response.first_choice_content(), Some("no headers"));
 }
