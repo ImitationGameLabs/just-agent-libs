@@ -2,8 +2,9 @@ use std::time::Duration;
 
 use just_common::error::TransportError;
 use just_common::transport::http;
-use reqwest::Method;
+use reqwest::{Method, header::HeaderMap};
 use serde::{Serialize, de::DeserializeOwned};
+use serde_json::Value;
 
 use crate::{
     ChatCompletionStream, Error,
@@ -78,6 +79,51 @@ impl DeepSeekClient {
             .await
     }
 
+    /// Sends a pre-serialized JSON body with extra headers and deserializes the response.
+    ///
+    /// Used by the prepared-request path to avoid double serialization and to carry
+    /// per-request headers through to the transport layer.
+    pub async fn send_raw_json<T: DeserializeOwned>(
+        &self,
+        method: Method,
+        path: &str,
+        body: &Value,
+        extra_headers: &HeaderMap,
+    ) -> Result<T, Error> {
+        let response = http::request(
+            &self.http,
+            &self.base_url,
+            method,
+            path,
+            Some(body),
+            Some(extra_headers),
+        )
+        .await?;
+        Ok(http::parse_json::<T>(response).await?)
+    }
+
+    /// Sends a pre-serialized JSON body with extra headers, returning the raw response for SSE.
+    ///
+    /// Used by the prepared-streaming path to avoid double serialization and to carry
+    /// per-request headers through to the transport layer.
+    pub async fn stream_raw_json(
+        &self,
+        method: Method,
+        path: &str,
+        body: &Value,
+        extra_headers: &HeaderMap,
+    ) -> Result<reqwest::Response, Error> {
+        Ok(http::request::<Value>(
+            &self.http,
+            &self.base_url,
+            method,
+            path,
+            Some(body),
+            Some(extra_headers),
+        )
+        .await?)
+    }
+
     async fn request_json<Req, Resp>(
         &self,
         method: Method,
@@ -88,7 +134,10 @@ impl DeepSeekClient {
         Req: Serialize + ?Sized,
         Resp: DeserializeOwned,
     {
-        Ok(http::request_json::<Req, Resp>(&self.http, &self.base_url, method, path, body).await?)
+        Ok(
+            http::request_json::<Req, Resp>(&self.http, &self.base_url, method, path, body, None)
+                .await?,
+        )
     }
 
     async fn request<Req>(
@@ -100,7 +149,7 @@ impl DeepSeekClient {
     where
         Req: Serialize + ?Sized,
     {
-        Ok(http::request::<Req>(&self.http, &self.base_url, method, path, body).await?)
+        Ok(http::request::<Req>(&self.http, &self.base_url, method, path, body, None).await?)
     }
 }
 

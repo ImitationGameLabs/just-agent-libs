@@ -35,22 +35,27 @@ pub async fn request_json<Req, Resp>(
     method: Method,
     path: &str,
     body: Option<&Req>,
+    extra_headers: Option<&HeaderMap>,
 ) -> Result<Resp, TransportError>
 where
     Req: Serialize + ?Sized,
     Resp: DeserializeOwned,
 {
-    let response = request::<Req>(http, base_url, method, path, body).await?;
+    let response = request::<Req>(http, base_url, method, path, body, extra_headers).await?;
     parse_json::<Resp>(response).await
 }
 
 /// Executes a request and returns the successful raw response.
+///
+/// `extra_headers` are merged last (after body/Content-Type), overriding any matching
+/// default or per-request headers. Pass `None` to rely solely on the client's defaults.
 pub async fn request<Req>(
     http: &reqwest::Client,
     base_url: &str,
     method: Method,
     path: &str,
     body: Option<&Req>,
+    extra_headers: Option<&HeaderMap>,
 ) -> Result<Response, TransportError>
 where
     Req: Serialize + ?Sized,
@@ -63,6 +68,11 @@ where
         request = request
             .header(CONTENT_TYPE, "application/json")
             .body(payload);
+    }
+
+    // Apply extra headers last so caller overrides take precedence.
+    if let Some(headers) = extra_headers {
+        request = request.headers(headers.clone());
     }
 
     let response = request.send().await.map_err(TransportError::Transport)?;
