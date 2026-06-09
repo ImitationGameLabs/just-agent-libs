@@ -6,9 +6,6 @@ use super::{
 };
 
 /// Wire DTO for `POST /chat/completions`.
-pub type CreateChatCompletionRequest = ChatCompletionRequest;
-
-/// Wire DTO for `POST /chat/completions`.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct ChatCompletionRequest {
     pub model: String,

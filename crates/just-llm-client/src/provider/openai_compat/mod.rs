@@ -58,7 +58,7 @@ impl CapabilityNegotiation for OpenAiCompatBackend {
 impl LlmBackend for OpenAiCompatBackend {
     fn prepare(&self, request: ChatCompletionRequest) -> Result<PreparedChatRequest, LlmError> {
         validate_non_streaming_request(&request, "prepare", "prepare_streaming")?;
-        let provider_request: just_openai_compat::types::chat::CreateChatCompletionRequest =
+        let provider_request: just_openai_compat::types::chat::ChatCompletionRequest =
             request.into();
         let inner = self
             .client
@@ -86,7 +86,7 @@ impl LlmBackend for OpenAiCompatBackend {
         request: ChatCompletionRequest,
     ) -> Result<PreparedChatRequest, LlmError> {
         let request = into_validated_streaming_request(request, "prepare_streaming")?;
-        let provider_request: just_openai_compat::types::chat::CreateChatCompletionRequest =
+        let provider_request: just_openai_compat::types::chat::ChatCompletionRequest =
             request.into();
         let inner = self
             .client

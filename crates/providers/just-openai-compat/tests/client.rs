@@ -2,7 +2,7 @@ use futures_util::StreamExt;
 use just_common::error::TransportError;
 use just_openai_compat::{
     ChatCompletionStream, Error, OpenAiCompatClient,
-    types::chat::{AssistantRole, ChatMessage, CreateChatCompletionRequest},
+    types::chat::{AssistantRole, ChatCompletionRequest, ChatMessage},
 };
 use serde_json::json;
 use wiremock::{
@@ -27,8 +27,8 @@ fn client_with_http(server: &MockServer) -> OpenAiCompatClient {
         .unwrap()
 }
 
-fn basic_request() -> CreateChatCompletionRequest {
-    CreateChatCompletionRequest::new(
+fn basic_request() -> ChatCompletionRequest {
+    ChatCompletionRequest::new(
         "gpt-4.1-mini",
         vec![
             ChatMessage::system("You are helpful."),
@@ -93,7 +93,7 @@ async fn creates_non_streaming_chat_completion() {
         .await;
 
     let response = client(&server)
-        .create_chat_completion(basic_request())
+        .chat_completion(basic_request())
         .await
         .unwrap();
 
@@ -106,7 +106,7 @@ async fn creates_non_streaming_chat_completion() {
 
 #[tokio::test]
 async fn rejects_stream_flag_on_non_stream_method() {
-    let request = CreateChatCompletionRequest {
+    let request = ChatCompletionRequest {
         stream: Some(true),
         ..basic_request()
     };
@@ -116,7 +116,7 @@ async fn rejects_stream_flag_on_non_stream_method() {
         .base_url("http://localhost")
         .build()
         .unwrap()
-        .create_chat_completion(request)
+        .chat_completion(request)
         .await
         .unwrap_err();
 

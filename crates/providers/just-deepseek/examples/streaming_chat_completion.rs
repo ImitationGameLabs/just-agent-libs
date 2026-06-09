@@ -3,7 +3,7 @@ use std::error::Error;
 use futures_util::StreamExt;
 use just_deepseek::{
     DeepSeekClient,
-    types::chat::{ChatMessage, CreateChatCompletionRequest},
+    types::chat::{ChatCompletionRequest, ChatMessage},
 };
 
 fn expect_env(name: &str) -> String {
@@ -24,7 +24,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
     let client = builder.build()?;
 
-    let mut request = CreateChatCompletionRequest::new(
+    let mut request = ChatCompletionRequest::new(
         model,
         vec![
             ChatMessage::system("You are a concise Rust tutor. Respond in English."),

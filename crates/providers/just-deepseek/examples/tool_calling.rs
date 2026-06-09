@@ -3,7 +3,7 @@ use std::error::Error;
 use just_deepseek::{
     DeepSeekClient,
     types::chat::{
-        ChatCompletionToolCall as ToolCall, ChatMessage, CreateChatCompletionRequest, FunctionCall,
+        ChatCompletionRequest, ChatCompletionToolCall as ToolCall, ChatMessage, FunctionCall,
         FunctionDefinition, ReasoningEffort, ThinkingConfig, ThinkingMode, ToolCallsMessage,
         ToolChoice, ToolChoiceMode, ToolDefinition, ToolType,
     },
@@ -52,7 +52,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     println!("[system] You are a weather assistant. Use the provided tool.");
     println!("[user] What's the weather in Shanghai?");
 
-    let mut request = CreateChatCompletionRequest::new(
+    let mut request = ChatCompletionRequest::new(
         model.clone(),
         vec![
             ChatMessage::system("You are a weather assistant. Use the provided tool."),
@@ -66,7 +66,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     request.tools = Some(vec![weather_tool]);
     request.tool_choice = Some(ToolChoice::Mode(ToolChoiceMode::Auto));
 
-    let response = client.create_chat_completion(request).await?;
+    let response = client.chat_completion(request).await?;
     let choice = response
         .choices
         .first()
@@ -124,13 +124,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
         messages.push(ChatMessage::tool_result(&weather_result, &call.id));
     }
 
-    let mut request2 = CreateChatCompletionRequest::new(model, messages);
+    let mut request2 = ChatCompletionRequest::new(model, messages);
     request2.thinking = Some(ThinkingConfig {
         kind: ThinkingMode::Enabled,
     });
     request2.reasoning_effort = Some(ReasoningEffort::High);
 
-    let response2 = client.create_chat_completion(request2).await?;
+    let response2 = client.chat_completion(request2).await?;
     let choice2 = response2
         .choices
         .first()

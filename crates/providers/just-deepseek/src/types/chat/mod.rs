@@ -9,8 +9,8 @@ mod response;
 mod shared;
 
 pub use request::{
-    ChatCompletionRequest, ChatMessage, CreateChatCompletionRequest, ReasoningEffort, TextMessage,
-    ThinkingConfig, ThinkingMode, ToolCallsMessage, ToolResultMessage,
+    ChatCompletionRequest, ChatMessage, ReasoningEffort, TextMessage, ThinkingConfig, ThinkingMode,
+    ToolCallsMessage, ToolResultMessage,
 };
 pub use response::{
     AssistantMessage, AssistantRole, ChatCompletion, ChatCompletionChoice, ChatCompletionChunk,
@@ -27,13 +27,13 @@ pub use shared::{
 #[cfg(test)]
 mod tests {
     use super::{
-        ChatCompletionToolCall, ChatMessage, CreateChatCompletionRequest, FunctionCall,
-        StopSequence, ToolChoice, ToolChoiceMode, ToolType,
+        ChatCompletionRequest, ChatCompletionToolCall, ChatMessage, FunctionCall, StopSequence,
+        ToolChoice, ToolChoiceMode, ToolType,
     };
 
     #[test]
     fn serializes_minimal_request() {
-        let request = CreateChatCompletionRequest::new(
+        let request = ChatCompletionRequest::new(
             "deepseek-v4-pro",
             vec![
                 ChatMessage::system("You are helpful."),
@@ -52,7 +52,7 @@ mod tests {
     #[test]
     fn serializes_untagged_variants() {
         let mut request =
-            CreateChatCompletionRequest::new("deepseek-v4-pro", vec![ChatMessage::user("Hi")]);
+            ChatCompletionRequest::new("deepseek-v4-pro", vec![ChatMessage::user("Hi")]);
         request.stop = Some(StopSequence::Multiple(vec!["END".to_owned()]));
         request.tool_choice = Some(ToolChoice::Mode(ToolChoiceMode::Auto));
 

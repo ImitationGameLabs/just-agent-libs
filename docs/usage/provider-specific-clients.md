@@ -23,7 +23,7 @@ backend examples in the `just-llm-client` crate instead of these provider client
 ```rust
 use just_deepseek::{
     DeepSeekClient,
-    types::chat::{ChatMessage, CreateChatCompletionRequest},
+    types::chat::{ChatMessage, ChatCompletionRequest},
 };
 
 #[tokio::main]
@@ -32,7 +32,7 @@ async fn main() -> Result<(), just_deepseek::Error> {
         .api_key("your-api-key")
         .build()?;
 
-    let request = CreateChatCompletionRequest::new(
+    let request = ChatCompletionRequest::new(
         "deepseek-v4-pro",
         vec![
             ChatMessage::system("You are a concise assistant."),
@@ -40,7 +40,7 @@ async fn main() -> Result<(), just_deepseek::Error> {
         ],
     );
 
-    let response = client.create_chat_completion(request).await?;
+    let response = client.chat_completion(request).await?;
     println!("{}", response.choices[0].message.content.as_deref().unwrap_or_default());
     Ok(())
 }
@@ -51,7 +51,7 @@ async fn main() -> Result<(), just_deepseek::Error> {
 ```rust
 use just_deepseek::{
     DeepSeekClient,
-    types::chat::{ChatMessage, CreateChatCompletionRequest},
+    types::chat::{ChatMessage, ChatCompletionRequest},
 };
 use futures_util::StreamExt;
 
@@ -60,7 +60,7 @@ async fn main() -> Result<(), just_deepseek::Error> {
     let client = DeepSeekClient::builder()
         .api_key("your-api-key")
         .build()?;
-    let request = CreateChatCompletionRequest::new(
+    let request = ChatCompletionRequest::new(
         "deepseek-v4-pro",
         vec![ChatMessage::user("Stream a short answer.")],
     );

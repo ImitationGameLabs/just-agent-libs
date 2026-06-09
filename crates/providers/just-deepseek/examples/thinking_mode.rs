@@ -3,7 +3,7 @@ use std::error::Error;
 use just_deepseek::{
     DeepSeekClient,
     types::chat::{
-        ChatMessage, CreateChatCompletionRequest, ReasoningEffort, ThinkingConfig, ThinkingMode,
+        ChatCompletionRequest, ChatMessage, ReasoningEffort, ThinkingConfig, ThinkingMode,
     },
 };
 
@@ -25,7 +25,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
     let client = builder.build()?;
 
-    let mut request = CreateChatCompletionRequest::new(
+    let mut request = ChatCompletionRequest::new(
         model,
         vec![
             ChatMessage::system("You are a helpful math tutor."),
@@ -37,7 +37,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     });
     request.reasoning_effort = Some(ReasoningEffort::High);
 
-    let response = client.create_chat_completion(request).await?;
+    let response = client.chat_completion(request).await?;
     let choice = response
         .choices
         .first()

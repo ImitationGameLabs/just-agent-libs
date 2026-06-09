@@ -14,7 +14,7 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 ```rust,no_run
 use just_openai_compat::{
     OpenAiCompatClient,
-    types::chat::{ChatMessage, CreateChatCompletionRequest},
+    types::chat::{ChatMessage, ChatCompletionRequest},
 };
 
 #[tokio::main]
@@ -24,7 +24,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .base_url("https://api.example.com/v1")
         .build()?;
 
-    let request = CreateChatCompletionRequest::new(
+    let request = ChatCompletionRequest::new(
         "gpt-4o",
         vec![
             ChatMessage::system("You are a concise assistant."),
@@ -32,7 +32,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ],
     );
 
-    let response = client.create_chat_completion(request).await?;
+    let response = client.chat_completion(request).await?;
     let choice = response.choices.first().expect("expected at least one choice");
 
     println!("{}", choice.message.content.as_deref().unwrap_or_default());

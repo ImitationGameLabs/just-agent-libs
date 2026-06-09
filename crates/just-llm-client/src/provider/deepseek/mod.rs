@@ -63,8 +63,7 @@ impl CapabilityNegotiation for DeepSeekBackend {
 impl LlmBackend for DeepSeekBackend {
     fn prepare(&self, request: ChatCompletionRequest) -> Result<PreparedChatRequest, LlmError> {
         validate_non_streaming_request(&request, "prepare", "prepare_streaming")?;
-        let provider_request: just_deepseek::types::chat::CreateChatCompletionRequest =
-            request.into();
+        let provider_request: just_deepseek::types::chat::ChatCompletionRequest = request.into();
         let inner = self
             .client
             .prepare(provider_request)
@@ -91,8 +90,7 @@ impl LlmBackend for DeepSeekBackend {
         request: ChatCompletionRequest,
     ) -> Result<PreparedChatRequest, LlmError> {
         let request = into_validated_streaming_request(request, "prepare_streaming")?;
-        let provider_request: just_deepseek::types::chat::CreateChatCompletionRequest =
-            request.into();
+        let provider_request: just_deepseek::types::chat::ChatCompletionRequest = request.into();
         let inner = self
             .client
             .prepare_streaming(provider_request)

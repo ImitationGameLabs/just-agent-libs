@@ -26,7 +26,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let backend = DeepSeekBackend::new(client);
 
     let response = backend
-        .create_chat_completion(
+        .chat_completion(
             ChatCompletionRequest::new(
                 "deepseek-chat",
                 vec![ChatMessage::user("Say hello in one sentence.")],

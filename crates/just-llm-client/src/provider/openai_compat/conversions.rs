@@ -7,7 +7,7 @@
 use crate::types::chat as client_chat;
 use just_openai_compat::types::chat as provider_chat;
 
-impl From<client_chat::ChatCompletionRequest> for provider_chat::CreateChatCompletionRequest {
+impl From<client_chat::ChatCompletionRequest> for provider_chat::ChatCompletionRequest {
     fn from(request: client_chat::ChatCompletionRequest) -> Self {
         Self {
             model: request.model,

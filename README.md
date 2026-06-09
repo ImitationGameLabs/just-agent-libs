@@ -22,7 +22,7 @@ let client = just_deepseek::DeepSeekClient::builder()
     .api_key("your-api-key")
     .build()?;
 let backend = DeepSeekBackend::new(client);
-let response = backend.create_chat_completion(
+let response = backend.chat_completion(
     ChatCompletionRequest::new(
         "deepseek-v4-flash",
         vec![ChatMessage::user("Say hello.")],
@@ -50,7 +50,7 @@ impl Identifiable for MyBackend {
 
 #[async_trait]
 impl ChatCompletion for MyBackend {
-    async fn create_chat_completion(
+    async fn chat_completion(
         &self, request: ChatCompletionRequest,
     ) -> Result<ChatCompletionResponse, LlmError> { /* ... */ }
 
@@ -81,13 +81,13 @@ Direct Rust bindings to model provider HTTP APIs — wire-level DTOs, no extra a
 Bindings for OpenAI, Google, xAI, Anthropic, and others are planned but deferred until needed. If you urgently need a specific provider, feel free to open an issue so we can prioritize it.
 
 ```rust
-use just_deepseek::{DeepSeekClient, types::chat::{ChatMessage, CreateChatCompletionRequest}};
+use just_deepseek::{DeepSeekClient, types::chat::{ChatMessage, ChatCompletionRequest}};
 
 let client = DeepSeekClient::builder()
     .api_key("your-api-key")
     .build()?;
-let response = client.create_chat_completion(
-    CreateChatCompletionRequest::new(
+let response = client.chat_completion(
+    ChatCompletionRequest::new(
         "deepseek-v4-flash",
         vec![ChatMessage::user("Say hello.")],
     ),
