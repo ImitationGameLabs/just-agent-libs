@@ -1,5 +1,6 @@
 use std::{error::Error as StdError, fmt};
 
+use just_common::error::PreparedRequestError;
 use thiserror::Error;
 
 /// Boxed provider error source carried by [`LlmError::Backend`].
@@ -111,5 +112,11 @@ impl LlmError {
         E: StdError + Send + Sync + 'static,
     {
         Self::Backend { backend, source: Box::new(source) }
+    }
+}
+
+impl From<PreparedRequestError> for LlmError {
+    fn from(e: PreparedRequestError) -> Self {
+        LlmError::invalid_request(e.to_string())
     }
 }

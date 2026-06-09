@@ -6,8 +6,8 @@ use std::sync::{
 use async_trait::async_trait;
 use futures_util::stream;
 use just_llm_client::{
-    CapabilityNegotiation, ChatClientOptions, ChatCompletion, ChatCompletionStream, Identifiable,
-    ProviderEntry, ProviderRegistry, StreamingChatCompletion,
+    CapabilityNegotiation, ChatClientOptions, ChatCompletionStream, ProviderEntry,
+    ProviderRegistry,
     error::LlmError,
     provider::LlmBackend,
     types::{
@@ -18,6 +18,7 @@ use just_llm_client::{
         prepared::PreparedChatRequest,
     },
 };
+use serde_json::json;
 
 struct TestProvider {
     id: String,
@@ -59,56 +60,37 @@ impl just_llm_client::Identifiable for TestBackend {
 impl CapabilityNegotiation for TestBackend {}
 
 #[async_trait]
-impl ChatCompletion for TestBackend {
-    async fn create_chat_completion(
-        &self,
-        request: ChatCompletionRequest,
-    ) -> Result<ChatCompletionResponse, LlmError> {
-        Ok(response_for_model(request.model))
-    }
-
-    async fn prepared_request(
-        &self,
-        request: ChatCompletionRequest,
-    ) -> Result<PreparedChatRequest, LlmError> {
+impl LlmBackend for TestBackend {
+    fn prepare(&self, request: ChatCompletionRequest) -> Result<PreparedChatRequest, LlmError> {
         PreparedChatRequest::from_request_body(
-            self.backend_id(),
-            serde_json::json!({
+            self.backend_id,
+            json!({
                 "model": request.model,
                 "messages": request.messages,
             }),
         )
+        .map_err(LlmError::from)
     }
 
-    async fn send_prepared(
+    async fn send(
         &self,
-        request: &PreparedChatRequest,
+        prepared: &PreparedChatRequest,
     ) -> Result<ChatCompletionResponse, LlmError> {
         Ok(response_for_model(
-            request.model().unwrap_or("missing-model").to_owned(),
+            prepared.model().unwrap_or("missing-model").to_owned(),
         ))
     }
-}
 
-#[async_trait]
-impl StreamingChatCompletion for TestBackend {
-    async fn stream_chat_completion(
-        &self,
-        _request: ChatCompletionRequest,
-    ) -> Result<ChatCompletionStream, LlmError> {
-        Ok(Box::pin(stream::empty()))
-    }
-
-    async fn prepared_streaming_request(
+    fn prepare_streaming(
         &self,
         request: ChatCompletionRequest,
     ) -> Result<PreparedChatRequest, LlmError> {
-        self.prepared_request(request).await
+        self.prepare(request)
     }
 
-    async fn send_prepared_stream(
+    async fn send_streaming(
         &self,
-        _request: &PreparedChatRequest,
+        _prepared: &PreparedChatRequest,
     ) -> Result<ChatCompletionStream, LlmError> {
         Ok(Box::pin(stream::empty()))
     }

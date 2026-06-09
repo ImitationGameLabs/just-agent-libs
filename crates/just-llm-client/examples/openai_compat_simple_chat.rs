@@ -1,7 +1,7 @@
 mod common;
 
 use just_llm_client::{
-    ChatCompletion,
+    LlmBackend,
     provider::OpenAiCompatBackend,
     types::chat::{ChatCompletionRequest, ChatMessage},
 };
@@ -27,7 +27,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  [user] {prompt}");
 
     let response = backend
-        .create_chat_completion(
+        .chat_completion(
             ChatCompletionRequest::new(model, vec![ChatMessage::user(prompt)])
                 .with_system_prompt("You are a concise assistant."),
         )

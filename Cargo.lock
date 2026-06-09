@@ -710,6 +710,7 @@ name = "just-deepseek"
 version = "0.1.0"
 dependencies = [
  "async-stream",
+ "async-trait",
  "dotenvy",
  "futures-core",
  "futures-util",
@@ -747,6 +748,7 @@ name = "just-openai-compat"
 version = "0.1.0"
 dependencies = [
  "async-stream",
+ "async-trait",
  "dotenvy",
  "futures-core",
  "futures-util",

@@ -19,17 +19,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  [system] {}", client.system_prompt().unwrap_or(""),);
     println!("  [user] {prompt}");
 
-    let prepared = client
-        .prepared_request(client.request(vec![ChatMessage::user(prompt)]))
-        .await?;
+    let prepared = client.prepare(client.request(vec![ChatMessage::user(prompt)]))?;
 
     eprintln!(
         "prepared payload snapshot: {}",
         prepared.request_body_text()
     );
-    eprintln!("request preview: {:?}", prepared.preview());
 
-    let response = client.send_prepared(&prepared).await?;
+    let response = client.send(&prepared).await?;
 
     println!("\n--- response 1 ---");
     if let Some(rc) = response.first_choice_reasoning_content() {

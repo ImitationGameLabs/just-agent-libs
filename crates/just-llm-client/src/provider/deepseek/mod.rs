@@ -1,21 +1,19 @@
 //! DeepSeek LLM backend adapter.
 //!
-//! [`DeepSeekBackend`] wraps a `just_deepseek::DeepSeekClient` and implements the shared
-//! capability traits ([`ChatCompletion`](crate::ChatCompletion), [`Balance`](crate::Balance),
-//! etc.) so it can be used through [`LlmBackend`](crate::LlmBackend) or directly.
+//! [`DeepSeekBackend`] wraps a `just_deepseek::DeepSeekClient` and implements [`LlmBackend`]
+//! so it can be used through [`dyn LlmBackend`](crate::LlmBackend) or directly.
 //!
 //! Construct via [`DeepSeekBackend::new`] with a pre-built SDK client, or let
 //! [`DeepSeekProvider`](crate::DeepSeekProvider) build one through the registry.
 
 mod conversions;
+
 use async_trait::async_trait;
 use futures_util::StreamExt;
-use reqwest::Method;
 
 use crate::{
     capability::{
-        Balance, CapabilityNegotiation, ChatCompletion, ChatCompletionStream, Identifiable,
-        ModelCatalog, StreamingChatCompletion,
+        Balance, CapabilityNegotiation, ChatCompletionStream, Identifiable, ModelCatalog,
     },
     error::LlmError,
     provider::validation::{
@@ -29,6 +27,8 @@ use crate::{
         prepared::PreparedChatRequest,
     },
 };
+
+use super::LlmBackend;
 
 /// `just-llm-client` adapter for the DeepSeek provider crate.
 #[derive(Clone, Debug)]
@@ -60,109 +60,56 @@ impl CapabilityNegotiation for DeepSeekBackend {
 }
 
 #[async_trait]
-impl ChatCompletion for DeepSeekBackend {
-    async fn create_chat_completion(
-        &self,
-        request: ChatCompletionRequest,
-    ) -> Result<ChatCompletionResponse, LlmError> {
-        validate_non_streaming_request(
-            &request,
-            "create_chat_completion",
-            "stream_chat_completion",
-        )?;
-
-        let response = self
-            .client
-            .create_chat_completion(request.into())
-            .await
-            .map_err(|source| LlmError::backend(self.backend_id(), source))?;
-
-        Ok(response.into())
-    }
-
-    async fn prepared_request(
-        &self,
-        request: ChatCompletionRequest,
-    ) -> Result<PreparedChatRequest, LlmError> {
-        validate_non_streaming_request(&request, "prepared_request", "prepared_streaming_request")?;
-
+impl LlmBackend for DeepSeekBackend {
+    fn prepare(&self, request: ChatCompletionRequest) -> Result<PreparedChatRequest, LlmError> {
+        validate_non_streaming_request(&request, "prepare", "prepare_streaming")?;
         let provider_request: just_deepseek::types::chat::CreateChatCompletionRequest =
             request.into();
-        let request_body = serde_json::to_value(&provider_request)
+        let inner = self
+            .client
+            .prepare(provider_request)
             .map_err(|source| LlmError::backend(self.backend_id(), source))?;
-
-        PreparedChatRequest::from_request_body(self.backend_id(), request_body)
+        Ok(PreparedChatRequest::from_common(self.backend_id(), inner))
     }
 
-    async fn send_prepared(
+    async fn send(
         &self,
-        request: &PreparedChatRequest,
+        prepared: &PreparedChatRequest,
     ) -> Result<ChatCompletionResponse, LlmError> {
-        validate_prepared_non_streaming_request(request, "send_prepared", "send_prepared_stream")?;
-        request.ensure_backend(self.backend_id())?;
-
+        validate_prepared_non_streaming_request(prepared, "send", "send_streaming")?;
+        prepared.ensure_backend(self.backend_id())?;
         let response: just_deepseek::types::chat::ChatCompletion = self
             .client
-            .send_raw_json(
-                Method::POST,
-                "/chat/completions",
-                request.request_body(),
-                request.headers(),
-            )
+            .send(prepared.inner())
             .await
             .map_err(|source| LlmError::backend(self.backend_id(), source))?;
-
         Ok(response.into())
     }
-}
 
-#[async_trait]
-impl StreamingChatCompletion for DeepSeekBackend {
-    async fn stream_chat_completion(
-        &self,
-        request: ChatCompletionRequest,
-    ) -> Result<ChatCompletionStream, LlmError> {
-        let request = into_validated_streaming_request(request, "stream_chat_completion")?;
-        let stream = self
-            .client
-            .stream_chat_completion(request.into())
-            .await
-            .map_err(|source| LlmError::backend(self.backend_id(), source))?;
-        Ok(Box::pin(stream.map(|chunk| chunk.map(Into::into))))
-    }
-
-    async fn prepared_streaming_request(
+    fn prepare_streaming(
         &self,
         request: ChatCompletionRequest,
     ) -> Result<PreparedChatRequest, LlmError> {
-        let request = into_validated_streaming_request(request, "prepared_streaming_request")?;
+        let request = into_validated_streaming_request(request, "prepare_streaming")?;
         let provider_request: just_deepseek::types::chat::CreateChatCompletionRequest =
             request.into();
-        let request_body = serde_json::to_value(&provider_request)
+        let inner = self
+            .client
+            .prepare_streaming(provider_request)
             .map_err(|source| LlmError::backend(self.backend_id(), source))?;
-
-        PreparedChatRequest::from_request_body(self.backend_id(), request_body)
+        Ok(PreparedChatRequest::from_common(self.backend_id(), inner))
     }
 
-    async fn send_prepared_stream(
+    async fn send_streaming(
         &self,
-        request: &PreparedChatRequest,
+        prepared: &PreparedChatRequest,
     ) -> Result<ChatCompletionStream, LlmError> {
-        validate_prepared_streaming_request(request, "send_prepared_stream", "send_prepared")?;
-        request.ensure_backend(self.backend_id())?;
-
-        let response = self
+        validate_prepared_streaming_request(prepared, "send_streaming", "send")?;
+        prepared.ensure_backend(self.backend_id())?;
+        let stream = self
             .client
-            .stream_raw_json(
-                Method::POST,
-                "/chat/completions",
-                request.request_body(),
-                request.headers(),
-            )
+            .send_streaming(prepared.inner())
             .await
-            .map_err(|source| LlmError::backend(self.backend_id(), source))?;
-
-        let stream = just_deepseek::ChatCompletionStream::from_response(response)
             .map_err(|source| LlmError::backend(self.backend_id(), source))?;
         Ok(Box::pin(stream.map(|chunk| chunk.map(Into::into))))
     }

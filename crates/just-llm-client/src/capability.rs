@@ -5,12 +5,7 @@ use futures_core::Stream;
 
 use crate::{
     error::{Capability, LlmError},
-    types::{
-        balance::BalanceSnapshot,
-        chat::{ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse},
-        model::ModelCatalogResponse,
-        prepared::PreparedChatRequest,
-    },
+    types::{balance::BalanceSnapshot, chat::ChatCompletionChunk, model::ModelCatalogResponse},
 };
 
 /// Boxed stream of normalized chat-completion chunks.
@@ -22,50 +17,6 @@ pub type ChatCompletionStream = Pin<
 pub trait Identifiable: Send + Sync {
     /// Returns the stable backend identifier used in error attribution and prepared-request binding.
     fn backend_id(&self) -> &'static str;
-}
-
-/// Non-streaming chat completion, with both direct execution and explicit prepare/send paths.
-#[async_trait]
-pub trait ChatCompletion: Identifiable {
-    /// Executes a non-streaming chat completion request.
-    async fn create_chat_completion(
-        &self,
-        request: ChatCompletionRequest,
-    ) -> Result<ChatCompletionResponse, LlmError>;
-
-    /// Converts a normalized request into a backend-bound [`PreparedChatRequest`].
-    async fn prepared_request(
-        &self,
-        request: ChatCompletionRequest,
-    ) -> Result<PreparedChatRequest, LlmError>;
-
-    /// Executes a prepared request that was produced for the same backend.
-    async fn send_prepared(
-        &self,
-        request: &PreparedChatRequest,
-    ) -> Result<ChatCompletionResponse, LlmError>;
-}
-
-/// Streaming chat completion, with both direct execution and explicit prepare/send paths.
-#[async_trait]
-pub trait StreamingChatCompletion: Identifiable {
-    /// Starts a streaming chat completion request.
-    async fn stream_chat_completion(
-        &self,
-        request: ChatCompletionRequest,
-    ) -> Result<ChatCompletionStream, LlmError>;
-
-    /// Converts a streaming request into a backend-bound [`PreparedChatRequest`].
-    async fn prepared_streaming_request(
-        &self,
-        request: ChatCompletionRequest,
-    ) -> Result<PreparedChatRequest, LlmError>;
-
-    /// Executes a prepared streaming request that was produced for the same backend.
-    async fn send_prepared_stream(
-        &self,
-        request: &PreparedChatRequest,
-    ) -> Result<ChatCompletionStream, LlmError>;
 }
 
 /// List available models from the provider.

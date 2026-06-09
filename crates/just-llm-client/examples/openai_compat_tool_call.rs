@@ -1,7 +1,7 @@
 mod common;
 
 use just_llm_client::{
-    ChatCompletion,
+    LlmBackend,
     provider::OpenAiCompatBackend,
     types::chat::{
         ChatCompletionRequest, ChatMessage, FunctionDefinition, ToolDefinition, ToolType,
@@ -49,7 +49,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  [system] You are a helpful math assistant. Use the provided tools.");
     println!("  [user] What is 12345 + 67890?");
 
-    let response = backend.create_chat_completion(request).await?;
+    let response = backend.chat_completion(request).await?;
     println!("\n--- response 1 ---");
     if let Some(rc) = response.first_choice_reasoning_content() {
         println!("  [reasoning] {rc}");
@@ -109,7 +109,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }]);
 
     println!("\n--- response 2 ---");
-    let final_response = backend.create_chat_completion(follow_up).await?;
+    let final_response = backend.chat_completion(follow_up).await?;
     if let Some(rc) = final_response.first_choice_reasoning_content() {
         println!("  [reasoning] {rc}");
     }

@@ -14,4 +14,5 @@ pub use client::DeepSeekClient;
 pub use client::DeepSeekClientBuilder;
 pub use error::Error;
 pub use just_common as common;
+pub use just_common::prepared::PreparedChatRequest;
 pub use stream::ChatCompletionStream;

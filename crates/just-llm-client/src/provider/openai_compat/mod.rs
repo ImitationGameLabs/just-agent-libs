@@ -1,10 +1,9 @@
 //! OpenAI-compatible LLM backend adapter.
 //!
-//! [`OpenAiCompatBackend`] wraps a `just_openai_compat::OpenAiCompatClient` and
-//! implements the shared capability traits. Notable: balance inspection is negotiated
-//! explicitly and returns [`UnsupportedCapability`](crate::LlmError::UnsupportedCapability)
-//! during negotiation because the generic OpenAI-compatible API does not expose a balance
-//! endpoint.
+//! [`OpenAiCompatBackend`] wraps a `just_openai_compat::OpenAiCompatClient` and implements
+//! [`LlmBackend`]. Notable: balance inspection is negotiated explicitly and returns
+//! [`UnsupportedCapability`](crate::LlmError::UnsupportedCapability) during negotiation because
+//! the generic OpenAI-compatible API does not expose a balance endpoint.
 //!
 //! Construct via [`OpenAiCompatBackend::new`] with a pre-built SDK client, or let
 //! [`OpenAiCompatProvider`](crate::OpenAiCompatProvider) build one through the registry.
@@ -13,13 +12,9 @@ mod conversions;
 
 use async_trait::async_trait;
 use futures_util::StreamExt;
-use reqwest::Method;
 
 use crate::{
-    capability::{
-        CapabilityNegotiation, ChatCompletion, ChatCompletionStream, Identifiable, ModelCatalog,
-        StreamingChatCompletion,
-    },
+    capability::{CapabilityNegotiation, ChatCompletionStream, Identifiable, ModelCatalog},
     error::LlmError,
     provider::validation::{
         into_validated_streaming_request, validate_non_streaming_request,
@@ -31,6 +26,8 @@ use crate::{
         prepared::PreparedChatRequest,
     },
 };
+
+use super::LlmBackend;
 
 /// `just-llm-client` adapter for OpenAI-compatible provider crates.
 #[derive(Clone, Debug)]
@@ -58,109 +55,56 @@ impl CapabilityNegotiation for OpenAiCompatBackend {
 }
 
 #[async_trait]
-impl ChatCompletion for OpenAiCompatBackend {
-    async fn create_chat_completion(
-        &self,
-        request: ChatCompletionRequest,
-    ) -> Result<ChatCompletionResponse, LlmError> {
-        validate_non_streaming_request(
-            &request,
-            "create_chat_completion",
-            "stream_chat_completion",
-        )?;
-
-        let response = self
-            .client
-            .create_chat_completion(request.into())
-            .await
-            .map_err(|source| LlmError::backend(self.backend_id(), source))?;
-
-        Ok(response.into())
-    }
-
-    async fn prepared_request(
-        &self,
-        request: ChatCompletionRequest,
-    ) -> Result<PreparedChatRequest, LlmError> {
-        validate_non_streaming_request(&request, "prepared_request", "prepared_streaming_request")?;
-
+impl LlmBackend for OpenAiCompatBackend {
+    fn prepare(&self, request: ChatCompletionRequest) -> Result<PreparedChatRequest, LlmError> {
+        validate_non_streaming_request(&request, "prepare", "prepare_streaming")?;
         let provider_request: just_openai_compat::types::chat::CreateChatCompletionRequest =
             request.into();
-        let request_body = serde_json::to_value(&provider_request)
+        let inner = self
+            .client
+            .prepare(provider_request)
             .map_err(|source| LlmError::backend(self.backend_id(), source))?;
-
-        PreparedChatRequest::from_request_body(self.backend_id(), request_body)
+        Ok(PreparedChatRequest::from_common(self.backend_id(), inner))
     }
 
-    async fn send_prepared(
+    async fn send(
         &self,
-        request: &PreparedChatRequest,
+        prepared: &PreparedChatRequest,
     ) -> Result<ChatCompletionResponse, LlmError> {
-        validate_prepared_non_streaming_request(request, "send_prepared", "send_prepared_stream")?;
-        request.ensure_backend(self.backend_id())?;
-
+        validate_prepared_non_streaming_request(prepared, "send", "send_streaming")?;
+        prepared.ensure_backend(self.backend_id())?;
         let response: just_openai_compat::types::chat::ChatCompletion = self
             .client
-            .send_raw_json(
-                Method::POST,
-                "/chat/completions",
-                request.request_body(),
-                request.headers(),
-            )
+            .send(prepared.inner())
             .await
             .map_err(|source| LlmError::backend(self.backend_id(), source))?;
-
         Ok(response.into())
     }
-}
 
-#[async_trait]
-impl StreamingChatCompletion for OpenAiCompatBackend {
-    async fn stream_chat_completion(
-        &self,
-        request: ChatCompletionRequest,
-    ) -> Result<ChatCompletionStream, LlmError> {
-        let request = into_validated_streaming_request(request, "stream_chat_completion")?;
-        let stream = self
-            .client
-            .stream_chat_completion(request.into())
-            .await
-            .map_err(|source| LlmError::backend(self.backend_id(), source))?;
-        Ok(Box::pin(stream.map(|chunk| chunk.map(Into::into))))
-    }
-
-    async fn prepared_streaming_request(
+    fn prepare_streaming(
         &self,
         request: ChatCompletionRequest,
     ) -> Result<PreparedChatRequest, LlmError> {
-        let request = into_validated_streaming_request(request, "prepared_streaming_request")?;
+        let request = into_validated_streaming_request(request, "prepare_streaming")?;
         let provider_request: just_openai_compat::types::chat::CreateChatCompletionRequest =
             request.into();
-        let request_body = serde_json::to_value(&provider_request)
+        let inner = self
+            .client
+            .prepare_streaming(provider_request)
             .map_err(|source| LlmError::backend(self.backend_id(), source))?;
-
-        PreparedChatRequest::from_request_body(self.backend_id(), request_body)
+        Ok(PreparedChatRequest::from_common(self.backend_id(), inner))
     }
 
-    async fn send_prepared_stream(
+    async fn send_streaming(
         &self,
-        request: &PreparedChatRequest,
+        prepared: &PreparedChatRequest,
     ) -> Result<ChatCompletionStream, LlmError> {
-        validate_prepared_streaming_request(request, "send_prepared_stream", "send_prepared")?;
-        request.ensure_backend(self.backend_id())?;
-
-        let response = self
+        validate_prepared_streaming_request(prepared, "send_streaming", "send")?;
+        prepared.ensure_backend(self.backend_id())?;
+        let stream = self
             .client
-            .stream_raw_json(
-                Method::POST,
-                "/chat/completions",
-                request.request_body(),
-                request.headers(),
-            )
+            .send_streaming(prepared.inner())
             .await
-            .map_err(|source| LlmError::backend(self.backend_id(), source))?;
-
-        let stream = just_openai_compat::ChatCompletionStream::from_response(response)
             .map_err(|source| LlmError::backend(self.backend_id(), source))?;
         Ok(Box::pin(stream.map(|chunk| chunk.map(Into::into))))
     }

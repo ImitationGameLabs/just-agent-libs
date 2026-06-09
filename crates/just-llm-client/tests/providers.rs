@@ -5,8 +5,6 @@ use just_llm_client::error::Capability;
 use futures_util::StreamExt;
 #[cfg(any(feature = "deepseek", feature = "openai-compat"))]
 use just_llm_client::CapabilityNegotiation;
-#[cfg(feature = "openai-compat")]
-use just_llm_client::StreamingChatCompletion;
 #[cfg(feature = "deepseek")]
 use just_llm_client::provider::DeepSeekBackend;
 #[cfg(feature = "openai-compat")]
@@ -15,7 +13,7 @@ use just_llm_client::provider::OpenAiCompatBackend;
 use just_llm_client::types::chat::{ToolChoice, ToolChoiceMode};
 #[cfg(any(feature = "deepseek", feature = "openai-compat"))]
 use just_llm_client::{
-    ChatCompletion,
+    LlmBackend,
     error::LlmError,
     types::chat::{ChatCompletionRequest, ChatMessage},
 };
@@ -100,7 +98,7 @@ async fn deepseek_adapter_maps_chat_and_balance() {
 
     let backend = deepseek_backend(&server);
     let response = backend
-        .create_chat_completion(ChatCompletionRequest::new(
+        .chat_completion(ChatCompletionRequest::new(
             "deepseek-v4-pro",
             vec![ChatMessage::user("hello")],
         ))
@@ -120,7 +118,7 @@ async fn preparation_rejects_invalid_request_combinations() {
     let mut request = ChatCompletionRequest::new("deepseek-v4-pro", vec![ChatMessage::user("x")]);
     request.tool_choice = Some(ToolChoice::Mode(ToolChoiceMode::Auto));
 
-    let error = backend.prepared_request(request).await.unwrap_err();
+    let error = backend.prepare(request).unwrap_err();
 
     assert!(matches!(error, LlmError::InvalidRequest(_)));
 }
@@ -160,7 +158,7 @@ async fn deepseek_adapter_preserves_cache_usage_when_reported() {
 
     let backend = deepseek_backend(&server);
     let response = backend
-        .create_chat_completion(ChatCompletionRequest::new(
+        .chat_completion(ChatCompletionRequest::new(
             "deepseek-v4-pro",
             vec![ChatMessage::user("hello")],
         ))
@@ -244,21 +242,18 @@ async fn prepared_requests_can_be_previewed_and_executed() {
 
     let backend = openai_backend(&server);
     let prepared = backend
-        .prepared_request(ChatCompletionRequest::new(
+        .prepare(ChatCompletionRequest::new(
             "gpt-4.1-mini",
             vec![ChatMessage::user("hello from prepared")],
         ))
-        .await
         .unwrap();
 
     assert_eq!(prepared.backend_id(), "openai-compatible");
     assert_eq!(prepared.model(), Some("gpt-4.1-mini"));
     assert_eq!(prepared.message_count(), 1);
-    assert_eq!(prepared.preview().tool_count, 0);
-    assert_eq!(prepared.preview().extra_header_count, 0);
     assert!(prepared.request_body_text().contains("\"messages\""));
 
-    let response = backend.send_prepared(&prepared).await.unwrap();
+    let response = backend.send(&prepared).await.unwrap();
 
     assert_eq!(response.first_choice_content(), Some("prepared"));
 }
@@ -291,11 +286,10 @@ async fn prepared_requests_round_trip_and_execute_through_backend() {
 
     let backend = openai_backend(&server);
     let prepared = backend
-        .prepared_request(ChatCompletionRequest::new(
+        .prepare(ChatCompletionRequest::new(
             "gpt-4.1-mini",
             vec![ChatMessage::user("round trip")],
         ))
-        .await
         .unwrap();
 
     // Verify field accessors are consistent.
@@ -305,20 +299,20 @@ async fn prepared_requests_round_trip_and_execute_through_backend() {
     assert!(!prepared.has_stream());
     assert_eq!(prepared.headers().len(), 0);
 
-    let response = backend.send_prepared(&prepared).await.unwrap();
+    let response = backend.send(&prepared).await.unwrap();
 
     assert_eq!(response.first_choice_content(), Some("round trip"));
 }
 
 #[cfg(feature = "openai-compat")]
 #[tokio::test]
-async fn create_chat_completion_rejects_streaming_requests() {
+async fn chat_completion_rejects_streaming_requests() {
     let server = MockServer::start().await;
     let backend = openai_backend(&server);
     let mut request = ChatCompletionRequest::new("gpt-4.1-mini", vec![ChatMessage::user("x")]);
     request.stream = Some(true);
 
-    let error = backend.create_chat_completion(request).await.unwrap_err();
+    let error = backend.chat_completion(request).await.unwrap_err();
 
     assert!(matches!(error, LlmError::InvalidRequest(_)));
 }
@@ -371,17 +365,16 @@ async fn prepared_streaming_requests_can_be_previewed_and_executed() {
 
     let backend = openai_backend(&server);
     let prepared = backend
-        .prepared_streaming_request(ChatCompletionRequest::new(
+        .prepare_streaming(ChatCompletionRequest::new(
             "gpt-4.1-mini",
             vec![ChatMessage::user("stream please")],
         ))
-        .await
         .unwrap();
 
     assert!(prepared.has_stream());
     assert_eq!(prepared.headers().len(), 0);
 
-    let mut stream = backend.send_prepared_stream(&prepared).await.unwrap();
+    let mut stream = backend.send_streaming(&prepared).await.unwrap();
     let first = stream.next().await.unwrap().unwrap();
 
     assert_eq!(first.choices[0].delta.content.as_deref(), Some("hi"));
@@ -393,14 +386,13 @@ async fn non_stream_sender_rejects_prepared_streaming_requests() {
     let server = MockServer::start().await;
     let backend = openai_backend(&server);
     let prepared = backend
-        .prepared_streaming_request(ChatCompletionRequest::new(
+        .prepare_streaming(ChatCompletionRequest::new(
             "gpt-4.1-mini",
             vec![ChatMessage::user("stream please")],
         ))
-        .await
         .unwrap();
 
-    let error = backend.send_prepared(&prepared).await.unwrap_err();
+    let error = backend.send(&prepared).await.unwrap_err();
 
     assert!(matches!(error, LlmError::InvalidRequest(_)));
 }
@@ -411,14 +403,13 @@ async fn stream_sender_rejects_non_stream_prepared_requests() {
     let server = MockServer::start().await;
     let backend = openai_backend(&server);
     let prepared = backend
-        .prepared_request(ChatCompletionRequest::new(
+        .prepare(ChatCompletionRequest::new(
             "gpt-4.1-mini",
             vec![ChatMessage::user("hello")],
         ))
-        .await
         .unwrap();
 
-    let error = match backend.send_prepared_stream(&prepared).await {
+    let error = match backend.send_streaming(&prepared).await {
         Ok(_) => panic!("stream sender should reject non-stream prepared requests"),
         Err(error) => error,
     };
@@ -459,7 +450,7 @@ async fn openai_compat_adapter_leaves_unknown_cache_usage_empty() {
 
     let backend = openai_backend(&server);
     let response = backend
-        .create_chat_completion(ChatCompletionRequest::new(
+        .chat_completion(ChatCompletionRequest::new(
             "gpt-4.1-mini",
             vec![ChatMessage::user("hello")],
         ))
@@ -532,14 +523,13 @@ async fn prepared_requests_reject_cross_backend_execution() {
     let deepseek = deepseek_backend(&server);
     let openai = openai_backend(&server);
     let prepared = deepseek
-        .prepared_request(ChatCompletionRequest::new(
+        .prepare(ChatCompletionRequest::new(
             "deepseek-v4-pro",
             vec![ChatMessage::user("cross backend")],
         ))
-        .await
         .unwrap();
 
-    let error = openai.send_prepared(&prepared).await.unwrap_err();
+    let error = openai.send(&prepared).await.unwrap_err();
 
     assert!(matches!(error, LlmError::InvalidRequest(_)));
 }
@@ -615,18 +605,16 @@ async fn prepared_requests_send_extra_headers_to_backend() {
     );
 
     let prepared = backend
-        .prepared_request(ChatCompletionRequest::new(
+        .prepare(ChatCompletionRequest::new(
             "gpt-4.1-mini",
             vec![ChatMessage::user("hello")],
         ))
-        .await
         .unwrap()
         .with_headers(headers);
 
     assert_eq!(prepared.headers().len(), 1);
-    assert_eq!(prepared.preview().extra_header_count, 1);
 
-    let response = backend.send_prepared(&prepared).await.unwrap();
+    let response = backend.send(&prepared).await.unwrap();
     assert_eq!(response.first_choice_content(), Some("with headers"));
 }
 
@@ -658,15 +646,14 @@ async fn prepared_requests_work_without_extra_headers() {
 
     let backend = openai_backend(&server);
     let prepared = backend
-        .prepared_request(ChatCompletionRequest::new(
+        .prepare(ChatCompletionRequest::new(
             "gpt-4.1-mini",
             vec![ChatMessage::user("hello")],
         ))
-        .await
         .unwrap();
 
     assert_eq!(prepared.headers().len(), 0);
 
-    let response = backend.send_prepared(&prepared).await.unwrap();
+    let response = backend.send(&prepared).await.unwrap();
     assert_eq!(response.first_choice_content(), Some("no headers"));
 }

@@ -1,13 +1,14 @@
 use std::time::Duration;
 
 use just_common::error::TransportError;
+use just_common::prepared::PreparedChatRequest;
 use just_common::transport::http;
 use reqwest::{Method, header::HeaderMap};
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::Value;
 
 use crate::{
-    ChatCompletionStream, Error,
+    Error,
     types::{
         balance::GetUserBalanceResponse,
         chat::{ChatCompletion, CreateChatCompletionRequest},
@@ -38,33 +39,79 @@ impl DeepSeekClient {
         DeepSeekClientBuilder { api_key: None, base_url: None, http_builder: None }
     }
 
+    /// Prepares a non-streaming chat completion request for later execution.
+    ///
+    /// Serializes the request to JSON and validates that required fields are present.
+    /// This is a synchronous operation (no IO).
+    pub fn prepare(
+        &self,
+        request: CreateChatCompletionRequest,
+    ) -> Result<PreparedChatRequest, Error> {
+        if request.stream.unwrap_or(false) {
+            return Err(Error::InvalidRequest(
+                "stream=true is not supported by prepare; use prepare_streaming instead".into(),
+            ));
+        }
+        let value = serde_json::to_value(&request)?;
+        PreparedChatRequest::from_request_body(value).map_err(Error::from)
+    }
+
+    /// Sends a previously prepared non-streaming request.
+    pub async fn send(&self, prepared: &PreparedChatRequest) -> Result<ChatCompletion, Error> {
+        self.send_raw_json(
+            Method::POST,
+            "/chat/completions",
+            prepared.request_body(),
+            prepared.headers(),
+        )
+        .await
+    }
+
+    /// Prepares a streaming chat completion request for later execution.
+    ///
+    /// Forces `stream = true` on the request, then serializes and validates.
+    /// This is a synchronous operation (no IO).
+    pub fn prepare_streaming(
+        &self,
+        mut request: CreateChatCompletionRequest,
+    ) -> Result<PreparedChatRequest, Error> {
+        request.stream = Some(true);
+        let value = serde_json::to_value(&request)?;
+        PreparedChatRequest::from_request_body(value).map_err(Error::from)
+    }
+
+    /// Sends a previously prepared streaming request.
+    pub async fn send_streaming(
+        &self,
+        prepared: &PreparedChatRequest,
+    ) -> Result<crate::ChatCompletionStream, Error> {
+        let response = self
+            .stream_raw_json(
+                Method::POST,
+                "/chat/completions",
+                prepared.request_body(),
+                prepared.headers(),
+            )
+            .await?;
+        crate::ChatCompletionStream::from_response(response).map_err(Error::Transport)
+    }
+
     /// Executes a non-streaming chat completion request.
     pub async fn create_chat_completion(
         &self,
         request: CreateChatCompletionRequest,
     ) -> Result<ChatCompletion, Error> {
-        if request.stream.unwrap_or(false) {
-            return Err(Error::InvalidRequest(
-                "stream=true is not supported by create_chat_completion; use stream_chat_completion instead",
-            ));
-        }
-
-        self.request_json(Method::POST, "/chat/completions", Some(&request))
-            .await
+        let prepared = self.prepare(request)?;
+        self.send(&prepared).await
     }
 
     /// Starts a streaming chat completion request.
     pub async fn stream_chat_completion(
         &self,
-        mut request: CreateChatCompletionRequest,
-    ) -> Result<ChatCompletionStream, Error> {
-        request.stream = Some(true);
-
-        let response = self
-            .request(Method::POST, "/chat/completions", Some(&request))
-            .await?;
-
-        Ok(ChatCompletionStream::from_response(response)?)
+        request: CreateChatCompletionRequest,
+    ) -> Result<crate::ChatCompletionStream, Error> {
+        let prepared = self.prepare_streaming(request)?;
+        self.send_streaming(&prepared).await
     }
 
     /// Lists models currently exposed by the configured endpoint.
@@ -81,9 +128,8 @@ impl DeepSeekClient {
 
     /// Sends a pre-serialized JSON body with extra headers and deserializes the response.
     ///
-    /// Used by the prepared-request path to avoid double serialization and to carry
-    /// per-request headers through to the transport layer.
-    pub async fn send_raw_json<T: DeserializeOwned>(
+    /// Used internally by [`send`](Self::send).
+    pub(crate) async fn send_raw_json<T: DeserializeOwned>(
         &self,
         method: Method,
         path: &str,
@@ -104,9 +150,8 @@ impl DeepSeekClient {
 
     /// Sends a pre-serialized JSON body with extra headers, returning the raw response for SSE.
     ///
-    /// Used by the prepared-streaming path to avoid double serialization and to carry
-    /// per-request headers through to the transport layer.
-    pub async fn stream_raw_json(
+    /// Used internally by [`send_streaming`](Self::send_streaming).
+    pub(crate) async fn stream_raw_json(
         &self,
         method: Method,
         path: &str,
@@ -138,18 +183,6 @@ impl DeepSeekClient {
             http::request_json::<Req, Resp>(&self.http, &self.base_url, method, path, body, None)
                 .await?,
         )
-    }
-
-    async fn request<Req>(
-        &self,
-        method: Method,
-        path: &str,
-        body: Option<&Req>,
-    ) -> Result<reqwest::Response, Error>
-    where
-        Req: Serialize + ?Sized,
-    {
-        Ok(http::request::<Req>(&self.http, &self.base_url, method, path, body, None).await?)
     }
 }
 

@@ -12,6 +12,7 @@ categories = ["api-bindings", "web-programming::http-client", "asynchronous"]
 
 [dependencies]
 async-stream = { workspace = true }
+async-trait = { workspace = true }
 futures-core = { workspace = true }
 futures-util = { workspace = true }
 just-common = { workspace = true }

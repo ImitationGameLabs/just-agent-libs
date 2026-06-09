@@ -15,4 +15,5 @@ pub use client::OpenAiCompatClient;
 pub use client::OpenAiCompatClientBuilder;
 pub use error::Error;
 pub use just_common as common;
+pub use just_common::prepared::PreparedChatRequest;
 pub use stream::ChatCompletionStream;

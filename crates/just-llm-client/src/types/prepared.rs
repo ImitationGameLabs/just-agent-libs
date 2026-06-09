@@ -1,47 +1,45 @@
+//! Adapter-layer prepared request wrapping [`just_common::prepared::PreparedChatRequest`].
+//!
+//! This type adds backend identity to the common prepared request, enabling cross-backend
+//! guard checks at the adapter layer.
+
 use reqwest::header::HeaderMap;
 use serde_json::Value;
 
 use crate::error::LlmError;
 
-/// Lightweight summary of a prepared request.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PreparedChatRequestPreview {
-    /// Number of tools declared in the serialized payload.
-    pub tool_count: u32,
-    /// Whether the serialized payload enables streaming.
-    pub has_stream: bool,
-    /// Whether the serialized payload requests a structured response format.
-    pub has_response_format: bool,
-    /// Number of extra HTTP headers attached to this request.
-    pub extra_header_count: u32,
-}
+/// Alias for the common (identity-free) prepared request type.
+///
+/// Used internally to keep the distinction between the two `PreparedChatRequest` types clear.
+type CommonPrepared = just_common::prepared::PreparedChatRequest;
 
-/// Backend-bound prepared chat request.
+/// Adapter-layer prepared request carrying backend identity.
 ///
-/// The canonical source of truth is the serialized request body. Preview helpers derive from
-/// that same JSON payload so preview and execution cannot drift apart.
-///
-/// Extra HTTP headers can be attached via [`with_headers`](Self::with_headers) and will be
-/// merged on top of the backend client's default headers when the request is sent.
+/// Wraps a [`just_common::prepared::PreparedChatRequest`] and adds a `backend_id` so the
+/// adapter layer can reject requests prepared by one backend when sent through another.
 #[derive(Clone, Debug)]
 pub struct PreparedChatRequest {
     backend_id: String,
-    request_body: Value,
-    extra_headers: HeaderMap,
+    inner: CommonPrepared,
 }
 
 impl PreparedChatRequest {
-    // Keeping the canonical payload as JSON preserves provider-specific request shape without
-    // forcing the client layer to understand every backend extension.
-    /// Creates a prepared request from a pre-serialized JSON body.
+    /// Convenience constructor: validates JSON and wraps with backend identity.
     pub fn from_request_body(
         backend_id: impl Into<String>,
         request_body: Value,
-    ) -> Result<Self, LlmError> {
-        let request =
-            Self { backend_id: backend_id.into(), request_body, extra_headers: HeaderMap::new() };
-        request.validate()?;
-        Ok(request)
+    ) -> Result<Self, just_common::error::PreparedRequestError> {
+        Ok(Self {
+            backend_id: backend_id.into(),
+            inner: CommonPrepared::from_request_body(request_body)?,
+        })
+    }
+
+    /// Bridge constructor: wraps an already-validated common prepared request.
+    ///
+    /// Used by adapters after the provider SDK has prepared the request.
+    pub(crate) fn from_common(backend_id: impl Into<String>, inner: CommonPrepared) -> Self {
+        Self { backend_id: backend_id.into(), inner }
     }
 
     /// Returns the backend identifier that prepared this request.
@@ -49,104 +47,60 @@ impl PreparedChatRequest {
         &self.backend_id
     }
 
-    /// Returns the serialized `model` value when present and valid.
-    pub fn model(&self) -> Option<&str> {
-        self.request_body.get("model").and_then(Value::as_str)
-    }
-
-    /// Returns the number of serialized messages carried by this prepared request.
-    pub fn message_count(&self) -> usize {
-        self.messages_value().map_or(0, Vec::len)
-    }
-
-    /// Returns a compact summary derived from the canonical payload.
-    pub fn preview(&self) -> PreparedChatRequestPreview {
-        PreparedChatRequestPreview {
-            tool_count: self
-                .request_body
-                .get("tools")
-                .and_then(Value::as_array)
-                .map_or(0, |tools| tools.len().try_into().unwrap_or(u32::MAX)),
-            has_stream: self.has_stream(),
-            has_response_format: self.request_body.get("response_format").is_some(),
-            extra_header_count: self.extra_headers.len().try_into().unwrap_or(u32::MAX),
-        }
-    }
-
-    /// Returns whether the serialized payload enables streaming.
-    pub fn has_stream(&self) -> bool {
-        self.request_body
-            .get("stream")
-            .and_then(Value::as_bool)
-            .unwrap_or(false)
-    }
-
-    /// Returns the canonical request body for execution by a backend.
-    pub fn request_body(&self) -> &Value {
-        &self.request_body
-    }
-
-    /// Serializes the canonical request body as compact JSON text for diagnostics.
+    /// Returns a reference to the inner common prepared request.
     ///
-    /// This is intentionally a text snapshot rather than a structured `serde_json::Value`
-    /// accessor. The prepared request stays opaque by default so callers do not accidentally
-    /// couple themselves to the internal canonical representation.
-    pub fn request_body_text(&self) -> String {
-        serde_json::to_string(&self.request_body)
-            .expect("serializing serde_json::Value is infallible")
-    }
-
-    /// Returns the extra HTTP headers attached to this request.
-    pub fn headers(&self) -> &HeaderMap {
-        &self.extra_headers
-    }
-
-    /// Returns a new prepared request with the given extra HTTP headers, replacing any
-    /// previously set extra headers.
-    ///
-    /// These headers are merged on top of the backend client's default headers (which include
-    /// `Authorization` and `Accept`) when the request is sent. If a header name matches one of
-    /// the defaults (e.g. `Authorization`), the value provided here takes precedence. This is
-    /// intentional to support per-request credentials in multi-tenant setups.
-    pub fn with_headers(self, headers: HeaderMap) -> Self {
-        Self { extra_headers: headers, ..self }
+    /// Used by adapters to pass the identity-free request to the provider SDK.
+    pub fn inner(&self) -> &CommonPrepared {
+        &self.inner
     }
 
     /// Verifies that this request is executed by the backend that prepared it.
-    pub fn ensure_backend(&self, backend_id: &'static str) -> Result<(), LlmError> {
+    pub fn ensure_backend(&self, backend_id: &str) -> Result<(), LlmError> {
         if self.backend_id == backend_id {
             return Ok(());
         }
 
         Err(LlmError::invalid_request(format!(
             "prepared request for backend '{}' cannot be used by '{}'",
-            self.backend_id, backend_id
+            self.backend_id, backend_id,
         )))
     }
 
-    fn validate(&self) -> Result<(), LlmError> {
-        if !self.request_body.is_object() {
-            return Err(LlmError::invalid_request(
-                "prepared request body must be a JSON object",
-            ));
-        }
+    // -- Delegated accessors --
 
-        if self.model().is_none() {
-            return Err(LlmError::invalid_request(
-                "prepared request body must include a string model field",
-            ));
-        }
-
-        if self.messages_value().is_none() {
-            return Err(LlmError::invalid_request(
-                "prepared request body must include a messages array",
-            ));
-        }
-
-        Ok(())
+    /// Returns the serialized `model` value when present and valid.
+    pub fn model(&self) -> Option<&str> {
+        self.inner.model()
     }
 
-    fn messages_value(&self) -> Option<&Vec<Value>> {
-        self.request_body.get("messages").and_then(Value::as_array)
+    /// Returns the number of serialized messages carried by this prepared request.
+    pub fn message_count(&self) -> usize {
+        self.inner.message_count()
+    }
+
+    /// Returns whether the serialized payload enables streaming.
+    pub fn has_stream(&self) -> bool {
+        self.inner.has_stream()
+    }
+
+    /// Returns the canonical request body for execution by a backend.
+    pub fn request_body(&self) -> &Value {
+        self.inner.request_body()
+    }
+
+    /// Serializes the canonical request body as compact JSON text for diagnostics.
+    pub fn request_body_text(&self) -> String {
+        self.inner.request_body_text()
+    }
+
+    /// Returns the extra HTTP headers attached to this request.
+    pub fn headers(&self) -> &HeaderMap {
+        self.inner.headers()
+    }
+
+    /// Returns a new prepared request with the given extra HTTP headers, replacing any
+    /// previously set extra headers.
+    pub fn with_headers(self, headers: HeaderMap) -> Self {
+        Self { backend_id: self.backend_id, inner: self.inner.with_headers(headers) }
     }
 }

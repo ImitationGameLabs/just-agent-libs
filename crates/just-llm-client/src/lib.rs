@@ -22,11 +22,12 @@
 //!
 //! # Capability traits
 //!
-//! Every backend adapter implements a small root [`Identifiable`] trait plus fine-grained
-//! operation traits such as [`ChatCompletion`] and [`StreamingChatCompletion`]. Core execution and
-//! preparation paths stay directly callable; optional operations are negotiated through
-//! [`CapabilityNegotiation`] before use so `UnsupportedCapability` is reported at the negotiation
-//! boundary instead of from the capability method itself.
+//! Every backend adapter implements [`LlmBackend`], which provides `prepare`/`send`/`chat_completion`
+//! and their streaming counterparts with concrete types (no associated types). [`ChatClient`]
+//! derefs to `dyn LlmBackend` so all methods are available without importing the trait explicitly.
+//! Optional operations are negotiated through [`CapabilityNegotiation`] before use so
+//! `UnsupportedCapability` is reported at the negotiation boundary instead of from the
+//! capability method itself.
 //!
 //! # DTO layering
 //!
@@ -53,9 +54,9 @@ pub mod tools;
 /// Shared normalized value types.
 pub mod types;
 
+pub use crate::types::prepared::PreparedChatRequest;
 pub use capability::{
-    Balance, CapabilityNegotiation, ChatCompletion, ChatCompletionStream, Identifiable,
-    ModelCatalog, StreamingChatCompletion,
+    Balance, CapabilityNegotiation, ChatCompletionStream, Identifiable, ModelCatalog,
 };
 pub use error::{Capability, LlmError};
 pub use just_common::error::TransportError;
