@@ -28,7 +28,11 @@ struct TestProvider {
 
 impl TestProvider {
     fn new(id: impl Into<String>, connect_count: Arc<AtomicUsize>) -> Self {
-        Self { id: id.into(), provider: "test-provider", connect_count }
+        Self {
+            id: id.into(),
+            provider: "test-provider",
+            connect_count,
+        }
     }
 }
 
@@ -43,7 +47,9 @@ impl ProviderEntry for TestProvider {
 
     fn connect(&self) -> Result<Arc<dyn LlmBackend>, LlmError> {
         self.connect_count.fetch_add(1, Ordering::SeqCst);
-        Ok(Arc::new(TestBackend { backend_id: self.provider }))
+        Ok(Arc::new(TestBackend {
+            backend_id: self.provider,
+        }))
     }
 }
 

@@ -32,7 +32,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
             ChatMessage::user("What is 17 * 23? Show your reasoning."),
         ],
     );
-    request.thinking = Some(ThinkingConfig { kind: ThinkingMode::Enabled });
+    request.thinking = Some(ThinkingConfig {
+        kind: ThinkingMode::Enabled,
+    });
     request.reasoning_effort = Some(ReasoningEffort::High);
 
     let response = client.create_chat_completion(request).await?;

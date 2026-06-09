@@ -100,7 +100,9 @@ mod tests {
         .with_temperature(0.2)
         .with_max_tokens(64)
         .with_tool_choice(ToolChoice::Mode(ToolChoiceMode::Auto))
-        .with_response_format(ResponseFormat { kind: ResponseFormatType::Text })
+        .with_response_format(ResponseFormat {
+            kind: ResponseFormatType::Text,
+        })
         .with_system_prompt("You are a concise assistant.");
 
         assert_eq!(request.messages[0].role(), "system");
@@ -117,7 +119,9 @@ mod tests {
         );
         assert_eq!(
             request.response_format,
-            Some(ResponseFormat { kind: ResponseFormatType::Text })
+            Some(ResponseFormat {
+                kind: ResponseFormatType::Text
+            })
         );
     }
 

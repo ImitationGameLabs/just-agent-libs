@@ -33,7 +33,11 @@ impl RenamedTool {
     /// - `name` — the tool name exposed to the model.
     /// - `description` — optional override. When `None`, the inner tool's description is used.
     pub fn new(inner: Box<dyn LlmTool>, name: &str, description: Option<&str>) -> Self {
-        Self { inner, name: name.to_owned(), description: description.map(str::to_owned) }
+        Self {
+            inner,
+            name: name.to_owned(),
+            description: description.map(str::to_owned),
+        }
     }
 }
 

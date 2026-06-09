@@ -39,7 +39,10 @@ impl PreparedChatRequest {
     ///
     /// Used by adapters after the provider SDK has prepared the request.
     pub(crate) fn from_common(backend_id: impl Into<String>, inner: CommonPrepared) -> Self {
-        Self { backend_id: backend_id.into(), inner }
+        Self {
+            backend_id: backend_id.into(),
+            inner,
+        }
     }
 
     /// Returns the backend identifier that prepared this request.
@@ -101,6 +104,9 @@ impl PreparedChatRequest {
     /// Returns a new prepared request with the given extra HTTP headers, replacing any
     /// previously set extra headers.
     pub fn with_headers(self, headers: HeaderMap) -> Self {
-        Self { backend_id: self.backend_id, inner: self.inner.with_headers(headers) }
+        Self {
+            backend_id: self.backend_id,
+            inner: self.inner.with_headers(headers),
+        }
     }
 }

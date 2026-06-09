@@ -59,7 +59,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
             ChatMessage::user("What's the weather in Shanghai?"),
         ],
     );
-    request.thinking = Some(ThinkingConfig { kind: ThinkingMode::Enabled });
+    request.thinking = Some(ThinkingConfig {
+        kind: ThinkingMode::Enabled,
+    });
     request.reasoning_effort = Some(ReasoningEffort::High);
     request.tools = Some(vec![weather_tool]);
     request.tool_choice = Some(ToolChoice::Mode(ToolChoiceMode::Auto));
@@ -123,7 +125,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 
     let mut request2 = CreateChatCompletionRequest::new(model, messages);
-    request2.thinking = Some(ThinkingConfig { kind: ThinkingMode::Enabled });
+    request2.thinking = Some(ThinkingConfig {
+        kind: ThinkingMode::Enabled,
+    });
     request2.reasoning_effort = Some(ReasoningEffort::High);
 
     let response2 = client.create_chat_completion(request2).await?;

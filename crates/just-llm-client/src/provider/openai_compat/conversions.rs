@@ -98,7 +98,9 @@ impl From<client_chat::StopSequence> for provider_chat::StopSequence {
 
 impl From<client_chat::StreamOptions> for provider_chat::StreamOptions {
     fn from(options: client_chat::StreamOptions) -> Self {
-        Self { include_usage: options.include_usage }
+        Self {
+            include_usage: options.include_usage,
+        }
     }
 }
 
@@ -122,7 +124,9 @@ impl From<client_chat::ToolChoice> for provider_chat::ToolChoice {
             client_chat::ToolChoice::Mode(mode) => Self::Mode(mode.into()),
             client_chat::ToolChoice::Named(choice) => Self::Named(provider_chat::NamedToolChoice {
                 kind: choice.kind.into(),
-                function: provider_chat::NamedToolChoiceFunction { name: choice.function.name },
+                function: provider_chat::NamedToolChoiceFunction {
+                    name: choice.function.name,
+                },
             }),
         }
     }
@@ -245,7 +249,10 @@ impl From<provider_chat::ChatCompletionChunkToolCall> for client_chat::ChatCompl
 
 impl From<provider_chat::FunctionCallDelta> for client_chat::FunctionCallDelta {
     fn from(function: provider_chat::FunctionCallDelta) -> Self {
-        Self { name: function.name, arguments: function.arguments }
+        Self {
+            name: function.name,
+            arguments: function.arguments,
+        }
     }
 }
 
@@ -269,7 +276,9 @@ impl From<provider_chat::Usage> for client_chat::Usage {
             prompt_cache_miss_tokens: None,
             total_tokens: usage.total_tokens,
             completion_tokens_details: usage.completion_tokens_details.map(|details| {
-                client_chat::CompletionTokensDetails { reasoning_tokens: details.reasoning_tokens }
+                client_chat::CompletionTokensDetails {
+                    reasoning_tokens: details.reasoning_tokens,
+                }
             }),
         }
     }
@@ -301,7 +310,11 @@ impl From<provider_chat::TokenLogprob> for client_chat::TokenLogprob {
 
 impl From<provider_chat::TopLogprob> for client_chat::TopLogprob {
     fn from(entry: provider_chat::TopLogprob) -> Self {
-        Self { token: entry.token, logprob: entry.logprob, bytes: entry.bytes }
+        Self {
+            token: entry.token,
+            logprob: entry.logprob,
+            bytes: entry.bytes,
+        }
     }
 }
 

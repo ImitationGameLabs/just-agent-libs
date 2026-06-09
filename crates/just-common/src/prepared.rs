@@ -30,7 +30,10 @@ impl PreparedChatRequest {
     /// Validates that the body is a JSON object with a `model` string field and a `messages`
     /// array field.
     pub fn from_request_body(request_body: Value) -> Result<Self, PreparedRequestError> {
-        let request = Self { request_body, extra_headers: HeaderMap::new() };
+        let request = Self {
+            request_body,
+            extra_headers: HeaderMap::new(),
+        };
         request.validate()?;
         Ok(request)
     }
@@ -81,7 +84,10 @@ impl PreparedChatRequest {
     /// the defaults (e.g. `Authorization`), the value provided here takes precedence. This is
     /// intentional to support per-request credentials in multi-tenant setups.
     pub fn with_headers(self, headers: HeaderMap) -> Self {
-        Self { extra_headers: headers, ..self }
+        Self {
+            extra_headers: headers,
+            ..self
+        }
     }
 
     fn validate(&self) -> Result<(), PreparedRequestError> {

@@ -89,12 +89,18 @@ impl LlmError {
 
     /// Creates an unsupported-capability error for the given backend.
     pub fn unsupported(backend: &'static str, capability: Capability) -> Self {
-        Self::UnsupportedCapability { backend, capability }
+        Self::UnsupportedCapability {
+            backend,
+            capability,
+        }
     }
 
     /// Creates an unimplemented-capability error for the given backend.
     pub fn unimplemented(backend: &'static str, capability: Capability) -> Self {
-        Self::UnimplementedCapability { backend, capability }
+        Self::UnimplementedCapability {
+            backend,
+            capability,
+        }
     }
 
     /// Creates an unavailable-capability error for the given backend.
@@ -103,7 +109,11 @@ impl LlmError {
         capability: Capability,
         message: impl Into<String>,
     ) -> Self {
-        Self::UnavailableCapability { backend, capability, message: message.into() }
+        Self::UnavailableCapability {
+            backend,
+            capability,
+            message: message.into(),
+        }
     }
 
     /// Wraps a provider-specific source error.
@@ -111,7 +121,10 @@ impl LlmError {
     where
         E: StdError + Send + Sync + 'static,
     {
-        Self::Backend { backend, source: Box::new(source) }
+        Self::Backend {
+            backend,
+            source: Box::new(source),
+        }
     }
 }
 

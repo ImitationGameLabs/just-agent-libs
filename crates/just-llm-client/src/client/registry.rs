@@ -17,7 +17,10 @@ struct StoredProvider {
 
 impl StoredProvider {
     fn new(provider: impl ProviderEntry) -> Self {
-        Self { provider: Box::new(provider), backend: Mutex::new(None) }
+        Self {
+            provider: Box::new(provider),
+            backend: Mutex::new(None),
+        }
     }
 
     fn id(&self) -> &str {
@@ -39,7 +42,9 @@ pub struct ProviderRegistry {
 impl ProviderRegistry {
     /// Create an empty registry.
     pub fn new() -> Self {
-        Self { providers: Vec::new() }
+        Self {
+            providers: Vec::new(),
+        }
     }
 
     /// Create a registry with a single built-in DeepSeek provider entry.

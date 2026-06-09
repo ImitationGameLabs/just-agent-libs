@@ -17,7 +17,11 @@ pub struct OpenAiCompatClientBuilder {
 impl OpenAiCompatClientBuilder {
     /// Creates a new builder with default (empty) state.
     pub(crate) fn new() -> Self {
-        Self { api_key: None, base_url: None, http_builder: None }
+        Self {
+            api_key: None,
+            base_url: None,
+            http_builder: None,
+        }
     }
 
     /// Sets the API key (required).

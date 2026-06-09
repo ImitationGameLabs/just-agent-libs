@@ -35,7 +35,10 @@ mod tests {
     fn serializes_minimal_request() {
         let request = CreateChatCompletionRequest::new(
             "gpt-4.1-mini",
-            vec![ChatMessage::system("You are helpful."), ChatMessage::user("Hi")],
+            vec![
+                ChatMessage::system("You are helpful."),
+                ChatMessage::user("Hi"),
+            ],
         );
 
         let json = serde_json::to_value(request).unwrap();

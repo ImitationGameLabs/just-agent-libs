@@ -30,7 +30,10 @@ fn client_with_http(server: &MockServer) -> DeepSeekClient {
 fn basic_request() -> CreateChatCompletionRequest {
     CreateChatCompletionRequest::new(
         "deepseek-v4-pro",
-        vec![ChatMessage::system("You are helpful."), ChatMessage::user("Hello")],
+        vec![
+            ChatMessage::system("You are helpful."),
+            ChatMessage::user("Hello"),
+        ],
     )
 }
 
@@ -131,7 +134,10 @@ async fn creates_non_streaming_chat_completion() {
 
 #[tokio::test]
 async fn rejects_stream_flag_on_non_stream_method() {
-    let request = CreateChatCompletionRequest { stream: Some(true), ..basic_request() };
+    let request = CreateChatCompletionRequest {
+        stream: Some(true),
+        ..basic_request()
+    };
 
     let error = DeepSeekClient::builder()
         .api_key("test-key")

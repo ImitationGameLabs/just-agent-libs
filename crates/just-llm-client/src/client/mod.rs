@@ -37,7 +37,10 @@ pub struct ChatClientOptions {
 impl ChatClientOptions {
     /// Create options with a required default model.
     pub fn new(model: impl Into<String>) -> Self {
-        Self { model: model.into(), system_prompt: None }
+        Self {
+            model: model.into(),
+            system_prompt: None,
+        }
     }
 
     /// Add a default system prompt that will be injected into requests built by the client.
@@ -78,7 +81,12 @@ impl ChatClient {
         options: ChatClientOptions,
         backend: Arc<dyn LlmBackend>,
     ) -> Self {
-        Self { provider_id, model: options.model, system_prompt: options.system_prompt, backend }
+        Self {
+            provider_id,
+            model: options.model,
+            system_prompt: options.system_prompt,
+            backend,
+        }
     }
 
     /// Returns the provider entry id used to create this client.

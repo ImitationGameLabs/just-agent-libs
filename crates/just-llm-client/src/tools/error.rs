@@ -43,14 +43,23 @@ impl ToolCallError {
             .into_iter()
             .map(|name| name.as_ref().to_owned())
             .collect::<Vec<_>>();
-        let available =
-            if available.is_empty() { "(none)".to_owned() } else { available.join(", ") };
+        let available = if available.is_empty() {
+            "(none)".to_owned()
+        } else {
+            available.join(", ")
+        };
 
-        Self::UnknownTool { name: name.into(), available }
+        Self::UnknownTool {
+            name: name.into(),
+            available,
+        }
     }
 
     /// Creates a tool-execution error.
     pub fn execution(name: impl Into<String>, source: anyhow::Error) -> Self {
-        Self::Execution { name: name.into(), source }
+        Self::Execution {
+            name: name.into(),
+            source,
+        }
     }
 }

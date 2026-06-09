@@ -35,7 +35,10 @@ mod tests {
     fn serializes_minimal_request() {
         let request = CreateChatCompletionRequest::new(
             "deepseek-v4-pro",
-            vec![ChatMessage::system("You are helpful."), ChatMessage::user("Hi")],
+            vec![
+                ChatMessage::system("You are helpful."),
+                ChatMessage::user("Hi"),
+            ],
         );
 
         let json = serde_json::to_value(request).unwrap();

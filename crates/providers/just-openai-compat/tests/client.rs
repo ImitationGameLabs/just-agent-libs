@@ -30,7 +30,10 @@ fn client_with_http(server: &MockServer) -> OpenAiCompatClient {
 fn basic_request() -> CreateChatCompletionRequest {
     CreateChatCompletionRequest::new(
         "gpt-4.1-mini",
-        vec![ChatMessage::system("You are helpful."), ChatMessage::user("Hello")],
+        vec![
+            ChatMessage::system("You are helpful."),
+            ChatMessage::user("Hello"),
+        ],
     )
 }
 
@@ -103,7 +106,10 @@ async fn creates_non_streaming_chat_completion() {
 
 #[tokio::test]
 async fn rejects_stream_flag_on_non_stream_method() {
-    let request = CreateChatCompletionRequest { stream: Some(true), ..basic_request() };
+    let request = CreateChatCompletionRequest {
+        stream: Some(true),
+        ..basic_request()
+    };
 
     let error = OpenAiCompatClient::builder()
         .api_key("test-key")

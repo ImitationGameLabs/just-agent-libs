@@ -32,8 +32,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
             ),
         ],
     );
-    request.stream_options =
-        Some(just_openai_compat::types::chat::StreamOptions { include_usage: Some(true) });
+    request.stream_options = Some(just_openai_compat::types::chat::StreamOptions {
+        include_usage: Some(true),
+    });
 
     let mut stream = client.stream_chat_completion(request).await?;
     let mut had_reasoning = false;

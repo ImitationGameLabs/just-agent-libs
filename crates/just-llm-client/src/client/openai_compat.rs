@@ -19,7 +19,11 @@ impl OpenAiCompatProvider {
         api_key: impl Into<String>,
         base_url: impl Into<String>,
     ) -> Self {
-        Self { id: id.into(), api_key: api_key.into(), base_url: base_url.into() }
+        Self {
+            id: id.into(),
+            api_key: api_key.into(),
+            base_url: base_url.into(),
+        }
     }
 
     /// Alias for [`Self::new`] that keeps the old constructor naming.

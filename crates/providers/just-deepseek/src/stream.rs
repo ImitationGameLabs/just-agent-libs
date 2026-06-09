@@ -18,7 +18,9 @@ pub struct ChatCompletionStream {
 impl ChatCompletionStream {
     /// Creates a stream from an SSE HTTP response.
     pub fn from_response(response: reqwest::Response) -> Result<Self, TransportError> {
-        Ok(Self { inner: JsonEventStream::from_response(response)? })
+        Ok(Self {
+            inner: JsonEventStream::from_response(response)?,
+        })
     }
 }
 

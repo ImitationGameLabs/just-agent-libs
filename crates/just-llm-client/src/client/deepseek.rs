@@ -15,7 +15,11 @@ pub struct DeepSeekProvider {
 impl DeepSeekProvider {
     /// Create a configured provider entry from an explicit id and API key.
     pub fn new(id: impl Into<String>, api_key: impl Into<String>) -> Self {
-        Self { id: id.into(), api_key: api_key.into(), base_url: None }
+        Self {
+            id: id.into(),
+            api_key: api_key.into(),
+            base_url: None,
+        }
     }
 
     /// Alias for [`Self::new`] that keeps the old constructor naming.

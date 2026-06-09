@@ -13,7 +13,9 @@ pub struct ToolDispatcher {
 impl ToolDispatcher {
     /// Creates an empty tool registry.
     pub fn new() -> Self {
-        Self { tools: BTreeMap::new() }
+        Self {
+            tools: BTreeMap::new(),
+        }
     }
 
     /// Returns the number of registered tools.

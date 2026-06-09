@@ -26,7 +26,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let request = CreateChatCompletionRequest::new(
         model,
-        vec![ChatMessage::system("You are a concise assistant."), ChatMessage::user(prompt)],
+        vec![
+            ChatMessage::system("You are a concise assistant."),
+            ChatMessage::user(prompt),
+        ],
     );
 
     let response = client.create_chat_completion(request).await?;

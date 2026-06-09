@@ -65,7 +65,9 @@ where
             }
         };
 
-        Ok(Self { inner: Box::pin(stream) })
+        Ok(Self {
+            inner: Box::pin(stream),
+        })
     }
 }
 
@@ -164,8 +166,10 @@ where
         return Ok(ParsedEvent::Done);
     }
 
-    let chunk = serde_json::from_str(&payload)
-        .map_err(|source| TransportError::Deserialize { source, body: payload })?;
+    let chunk = serde_json::from_str(&payload).map_err(|source| TransportError::Deserialize {
+        source,
+        body: payload,
+    })?;
 
     Ok(ParsedEvent::Chunk(chunk))
 }
