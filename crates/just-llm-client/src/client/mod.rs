@@ -114,8 +114,9 @@ impl ChatClient {
         self
     }
 
-    /// Build a request pre-filled with this client's default model and system prompt.
-    pub fn request(&self, messages: Vec<ChatMessage>) -> ChatCompletionRequest {
+    /// Create a request pre-filled with this client's default model and system prompt.
+    #[must_use = "the returned request must be passed to a backend method to have any effect"]
+    pub fn create_request(&self, messages: Vec<ChatMessage>) -> ChatCompletionRequest {
         let mut request = ChatCompletionRequest::new(self.model.clone(), messages);
         if let Some(system_prompt) = &self.system_prompt {
             request = request.with_system_prompt(system_prompt.clone());

@@ -130,7 +130,7 @@ fn chat_client_request_injects_model_and_system_prompt() {
             ChatClientOptions::new("test-model").with_system_prompt("Be concise."),
         )
         .unwrap();
-    let request = client.request(vec![ChatMessage::user("hello")]);
+    let request = client.create_request(vec![ChatMessage::user("hello")]);
 
     assert_eq!(client.provider_id(), "alpha");
     assert_eq!(client.model(), "test-model");

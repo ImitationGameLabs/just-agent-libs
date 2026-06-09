@@ -31,7 +31,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  [system] You are a concise assistant.");
     println!("  [user] {prompt}");
 
-    let prepared = client.prepare(client.request(vec![ChatMessage::user(prompt)]))?;
+    let prepared = client.prepare(client.create_request(vec![ChatMessage::user(prompt)]))?;
     let response = client.send(&prepared).await?;
 
     println!("\n--- response 1 ---");

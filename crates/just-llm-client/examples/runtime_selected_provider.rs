@@ -19,7 +19,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  [system] {}", client.system_prompt().unwrap_or(""),);
     println!("  [user] {prompt}");
 
-    let prepared = client.prepare(client.request(vec![ChatMessage::user(prompt)]))?;
+    let prepared = client.prepare(client.create_request(vec![ChatMessage::user(prompt)]))?;
 
     eprintln!(
         "prepared payload snapshot: {}",
