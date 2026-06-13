@@ -106,14 +106,33 @@ impl OpenAiCompatClient {
 impl OpenAiCompatClient {
     // --- typed operations (hide HTTP entirely) ---
 
+    /// Parses a raw HTTP response into a provider-native non-streaming completion.
+    ///
+    /// Performs HTTP status checking and JSON deserialization. Combine with
+    /// [`prepare`](Self::prepare) and [`send`](Self::send) for full control over the request
+    /// lifecycle, e.g. to inspect response headers before consuming the body.
+    pub async fn parse(&self, response: reqwest::Response) -> Result<ChatCompletion, Error> {
+        parse_json(response).await
+    }
+
+    /// Parses a raw HTTP response into a provider-native streaming chunk stream.
+    ///
+    /// Checks the HTTP status first (the SSE stream parser assumes a 2xx event stream).
+    pub async fn parse_streaming(
+        &self,
+        response: reqwest::Response,
+    ) -> Result<crate::ChatCompletionStream, Error> {
+        let response = ensure_success(response).await?;
+        crate::ChatCompletionStream::from_response(response).map_err(Error::Transport)
+    }
+
     /// Executes a non-streaming chat completion request.
     pub async fn chat_completion(
         &self,
         request: ChatCompletionRequest,
     ) -> Result<ChatCompletion, Error> {
-        let req = self.prepare(request)?;
-        let resp = self.send(req).await?;
-        parse_json(resp).await
+        let response = self.send(self.prepare(request)?).await?;
+        self.parse(response).await
     }
 
     /// Starts a streaming chat completion request.
@@ -121,10 +140,8 @@ impl OpenAiCompatClient {
         &self,
         request: ChatCompletionRequest,
     ) -> Result<crate::ChatCompletionStream, Error> {
-        let req = self.prepare_streaming(request)?;
-        let resp = self.send(req).await?;
-        let resp = ensure_success(resp).await?;
-        crate::ChatCompletionStream::from_response(resp).map_err(Error::Transport)
+        let response = self.send(self.prepare_streaming(request)?).await?;
+        self.parse_streaming(response).await
     }
 
     /// Lists models currently exposed by the configured endpoint.

@@ -110,6 +110,24 @@ impl LlmBackend for TestBackend {
         Ok(ChatCompletionStream::new(Box::pin(stream::empty())))
     }
 
+    async fn parse(
+        &self,
+        _response: reqwest::Response,
+    ) -> Result<ChatCompletionResponse, LlmError> {
+        // chat_completion is overridden above, so the default prepare->send->parse path
+        // is never taken; this exists only to satisfy the trait surface.
+        unreachable!("TestBackend.parse is unreachable: chat_completion is overridden")
+    }
+
+    async fn parse_streaming(
+        &self,
+        _response: reqwest::Response,
+    ) -> Result<ChatCompletionStream, LlmError> {
+        unreachable!(
+            "TestBackend.parse_streaming is unreachable: stream_chat_completion is overridden"
+        )
+    }
+
     fn render_messages(&self, _messages: &[ChatMessage]) -> Result<String, LlmError> {
         Ok("[]".to_owned())
     }

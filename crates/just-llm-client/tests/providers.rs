@@ -261,6 +261,161 @@ async fn prepare_send_returns_raw_response_with_accessible_headers() {
 
 #[cfg(feature = "openai-compat")]
 #[tokio::test]
+async fn prepare_send_parse_roundtrips_normalized_response() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "chatcmpl-rt",
+            "object": "chat.completion",
+            "created": 1,
+            "model": "gpt-4.1-mini",
+            "choices": [{
+                "index": 0,
+                "finish_reason": "stop",
+                "message": {"role": "assistant", "content": "hi"}
+            }]
+        })))
+        .mount(&server)
+        .await;
+
+    let backend = openai_backend(&server);
+    let prepared = backend
+        .prepare(ChatCompletionRequest::new(
+            "gpt-4.1-mini",
+            vec![ChatMessage::user("hello")],
+        ))
+        .unwrap();
+    let response = backend.send(prepared).await.unwrap();
+    assert!(response.status().is_success());
+
+    // parse deserializes via dyn dispatch on the right backend.
+    let completion = backend.parse(response).await.unwrap();
+    assert_eq!(completion.first_choice_content(), Some("hi"));
+}
+
+#[cfg(feature = "openai-compat")]
+#[tokio::test]
+async fn parse_surfaces_http_status_for_error_response() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(
+            ResponseTemplate::new(429)
+                .insert_header("retry-after", "30")
+                .set_body_json(json!({
+                    "error": {"message": "rate limited", "type": "rate_limit_error"}
+                })),
+        )
+        .mount(&server)
+        .await;
+
+    let backend = openai_backend(&server);
+    let prepared = backend
+        .prepare(ChatCompletionRequest::new(
+            "gpt-4.1-mini",
+            vec![ChatMessage::user("hello")],
+        ))
+        .unwrap();
+    let response = backend.send(prepared).await.unwrap();
+    // Headers are still readable before parse consumes the body.
+    assert_eq!(
+        response.headers().get("retry-after").unwrap(),
+        reqwest::header::HeaderValue::from_static("30")
+    );
+
+    // parse runs ensure_success; the backend wraps the provider's ProviderError, whose Transport
+    // variant carries the HttpStatus.
+    let error = backend.parse(response).await.unwrap_err();
+    let LlmError::Backend {
+        backend: id,
+        source,
+    } = error
+    else {
+        panic!("expected LlmError::Backend");
+    };
+    assert_eq!(id, "openai-compatible");
+    let provider_err = source
+        .downcast_ref::<just_common::error::ProviderError>()
+        .expect("source should be a ProviderError");
+    assert!(matches!(
+        provider_err,
+        just_common::error::ProviderError::Transport(
+            just_common::error::TransportError::HttpStatus { status, .. }
+        ) if *status == reqwest::StatusCode::TOO_MANY_REQUESTS
+    ));
+}
+
+#[cfg(feature = "openai-compat")]
+#[tokio::test]
+async fn parse_surfaces_deserialize_error_for_malformed_body() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("not valid json"))
+        .mount(&server)
+        .await;
+
+    let backend = openai_backend(&server);
+    let prepared = backend
+        .prepare(ChatCompletionRequest::new(
+            "gpt-4.1-mini",
+            vec![ChatMessage::user("hello")],
+        ))
+        .unwrap();
+    let response = backend.send(prepared).await.unwrap();
+
+    // A 2xx body that fails to deserialize surfaces as Backend(ProviderError::Deserialize).
+    let error = backend.parse(response).await.unwrap_err();
+    let LlmError::Backend { source, .. } = error else {
+        panic!("expected LlmError::Backend");
+    };
+    let provider_err = source
+        .downcast_ref::<just_common::error::ProviderError>()
+        .expect("source should be a ProviderError");
+    assert!(matches!(
+        provider_err,
+        just_common::error::ProviderError::Deserialize { .. }
+    ));
+}
+
+#[cfg(feature = "openai-compat")]
+#[tokio::test]
+async fn parse_streaming_yields_normalized_chunks() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_raw(
+                    "data: {\"id\":\"chatcmpl-s\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"gpt-4.1-mini\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hi\"}}]}\n\ndata: [DONE]\n",
+                    "text/event-stream",
+                ),
+        )
+        .mount(&server)
+        .await;
+
+    let backend = openai_backend(&server);
+    let prepared = backend
+        .prepare_streaming(ChatCompletionRequest::new(
+            "gpt-4.1-mini",
+            vec![ChatMessage::user("hi")],
+        ))
+        .unwrap();
+    let response = backend.send(prepared).await.unwrap();
+
+    let mut stream = backend.parse_streaming(response).await.unwrap();
+    let chunk = stream.next().await.unwrap().unwrap();
+    assert_eq!(chunk.choices[0].delta.content.as_deref(), Some("hi"));
+}
+
+#[cfg(feature = "openai-compat")]
+#[tokio::test]
 async fn chat_completion_rejects_streaming_requests() {
     let server = MockServer::start().await;
     let backend = openai_backend(&server);

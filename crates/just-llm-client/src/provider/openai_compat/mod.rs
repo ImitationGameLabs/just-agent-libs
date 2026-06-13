@@ -94,31 +94,26 @@ impl LlmBackend for OpenAiCompatBackend {
             .map_err(|e| LlmError::backend(self.backend_id(), e))
     }
 
-    // --- typed operations + rendering ---
+    // --- parse + rendering ---
 
-    async fn chat_completion(
-        &self,
-        request: ChatCompletionRequest,
-    ) -> Result<ChatCompletionResponse, LlmError> {
-        validate_non_streaming_request(&request, "chat_completion", "stream_chat_completion")?;
-        let provider_req: just_openai_compat::types::chat::ChatCompletionRequest = request.into();
-        let response = self
+    async fn parse(&self, response: reqwest::Response) -> Result<ChatCompletionResponse, LlmError> {
+        // Deserialize into the provider-native type, then lift to the normalized client type.
+        let native: just_openai_compat::types::chat::ChatCompletion = self
             .client
-            .chat_completion(provider_req)
+            .parse(response)
             .await
             .map_err(|e| LlmError::backend(self.backend_id(), e))?;
-        Ok(response.into())
+        Ok(native.into())
     }
 
-    async fn stream_chat_completion(
+    async fn parse_streaming(
         &self,
-        request: ChatCompletionRequest,
+        response: reqwest::Response,
     ) -> Result<ChatCompletionStream, LlmError> {
-        let request = into_validated_streaming_request(request, "stream_chat_completion")?;
-        let provider_req: just_openai_compat::types::chat::ChatCompletionRequest = request.into();
+        // The provider stream yields provider-native chunks; map to normalized types.
         let stream = self
             .client
-            .stream_chat_completion(provider_req)
+            .parse_streaming(response)
             .await
             .map_err(|e| LlmError::backend(self.backend_id(), e))?;
         let mapped = stream.map(|chunk| chunk.map(Into::into));

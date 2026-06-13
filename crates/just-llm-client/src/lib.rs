@@ -20,21 +20,24 @@
 //! materializes the shared backend the first time a registry entry is used, and later
 //! [`ChatClient`] values reuse that backend while carrying their own request defaults.
 //!
-//! # Prepare-send pattern
+//! # Prepare-send-parse pattern
 //!
-//! [`LlmBackend`] exposes a prepare-send pattern that gives callers full access to the HTTP
-//! response, including headers like `retry-after` and `x-ratelimit-*`:
+//! [`LlmBackend`] exposes a prepare-send-parse pattern that gives callers full access to the HTTP
+//! response, including headers like `retry-after` and `x-ratelimit-*`, before deserializing:
 //!
 //! ```ignore
-//! let builder = backend.prepare(request)?;
-//! let response = backend.send(builder).await?;
+//! let prepared = backend.prepare(request)?;          // reqwest::Request (Clone)
+//! let response = backend.send(prepared).await?;       // raw reqwest::Response, status unchecked
+//! // Inspect status / headers (retry-after, x-ratelimit-*) here, or clone `prepared` for retry.
 //! let retry_after = response.headers().get("retry-after");
+//! let completion = backend.parse(response).await?;    // deserialized via dyn dispatch
 //! ```
 //!
 //! # Capability traits
 //!
-//! Every backend adapter implements [`LlmBackend`], which provides `prepare`/`send`/`chat_completion`
-//! and their streaming counterparts with concrete types (no associated types). [`ChatClient`]
+//! Every backend adapter implements [`LlmBackend`], which provides the prepare/send/parse
+//! primitives (with streaming variants) and the `chat_completion`/`stream_chat_completion`
+//! convenience methods, all with concrete types (no associated types). [`ChatClient`]
 //! derefs to `dyn LlmBackend` so all methods are available without importing the trait explicitly.
 //! Optional operations are negotiated through [`CapabilityNegotiation`] before use so
 //! `UnsupportedCapability` is reported at the negotiation boundary instead of from the

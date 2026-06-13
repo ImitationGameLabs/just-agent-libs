@@ -18,7 +18,7 @@ types", not "provider wire DTOs without the client layer".
 ## When to use it
 
 - You want one code path that can target DeepSeek or an OpenAI-compatible endpoint.
-- You want the prepare-send pattern with full HTTP response access (headers like `retry-after`).
+- You want the prepare-send-parse pattern with full HTTP response access (headers like `retry-after`) before deserializing.
 - You want optional capabilities to be negotiated explicitly at runtime instead of spread across
   broad generic bounds.
 
@@ -60,10 +60,10 @@ JUST_LLM_MODEL=deepseek-v4-flash
 JUST_LLM_DEEPSEEK_API_KEY=your-deepseek-api-key
 ```
 
-## Prepare-send pattern
+## Prepare-send-parse pattern
 
-The `LlmBackend` trait supports preparing a request and sending it separately, giving callers full
-access to the HTTP response including headers:
+The `LlmBackend` trait supports preparing a request, sending it, and parsing it as separate steps,
+giving callers full access to the HTTP response (including headers) before deserializing:
 
 ```rust
 use just_llm_client::{
@@ -90,9 +90,12 @@ let builder = backend.prepare(
 // Send and get the raw HTTP response with full header access.
 let response = backend.send(builder).await?;
 let retry_after = response.headers().get("retry-after");
+
+// Deserialize into the normalized type via dyn dispatch on the backend.
+let completion = backend.parse(response).await?;
 ```
 
-For convenience, `chat_completion()` and `stream_chat_completion()` compose prepare + send + deserialize
+For convenience, `chat_completion()` and `stream_chat_completion()` compose prepare + send + parse
 into a single call.
 
 ## Runtime-selected provider example
