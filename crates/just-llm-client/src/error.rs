@@ -1,6 +1,5 @@
 use std::{error::Error as StdError, fmt};
 
-use just_common::error::PreparedRequestError;
 use thiserror::Error;
 
 /// Boxed provider error source carried by [`LlmError::Backend`].
@@ -8,6 +7,7 @@ pub type BoxError = Box<dyn StdError + Send + Sync>;
 
 /// Capability names used in client-level unsupported or unavailable errors.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Capability {
     /// One-shot chat completion execution.
     ChatCompletion,
@@ -36,10 +36,19 @@ impl fmt::Display for Capability {
 ///
 /// This keeps capability-level failures distinct from provider transport or protocol failures.
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum LlmError {
     /// The request was invalid before it reached the provider.
     #[error("invalid request: {0}")]
     InvalidRequest(String),
+
+    /// Failed to serialize a request payload or render provider-specific types.
+    #[error("serialization error: {source}")]
+    Serialization {
+        /// Underlying `serde_json` serialization failure.
+        #[source]
+        source: serde_json::Error,
+    },
 
     /// The backend never offers the requested capability.
     #[error("{backend} does not support {capability}")]
@@ -116,6 +125,11 @@ impl LlmError {
         }
     }
 
+    /// Creates a serialization error wrapping a `serde_json` failure.
+    pub fn serialization(source: serde_json::Error) -> Self {
+        Self::Serialization { source }
+    }
+
     /// Wraps a provider-specific source error.
     pub fn backend<E>(backend: &'static str, source: E) -> Self
     where
@@ -125,11 +139,5 @@ impl LlmError {
             backend,
             source: Box::new(source),
         }
-    }
-}
-
-impl From<PreparedRequestError> for LlmError {
-    fn from(e: PreparedRequestError) -> Self {
-        LlmError::invalid_request(e.to_string())
     }
 }

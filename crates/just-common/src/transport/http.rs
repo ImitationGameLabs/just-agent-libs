@@ -1,12 +1,19 @@
 //! Shared HTTP transport helpers for OpenAI-like providers.
+//!
+//! # Status-checking invariant
+//!
+//! Provider clients never hand a raw `reqwest::Response` to a body consumer without its HTTP
+//! status checked first. The check lives at the consume-the-response boundary: [`parse_json`]
+//! validates status for JSON bodies; callers consuming a response any other way (e.g. an SSE
+//! stream) must call [`ensure_success`] explicitly first.
 
 use reqwest::{
-    Method, Response,
-    header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue},
+    Response,
+    header::{ACCEPT, AUTHORIZATION, HeaderMap, HeaderValue},
 };
-use serde::{Serialize, de::DeserializeOwned};
+use serde::de::DeserializeOwned;
 
-use crate::error::TransportError;
+use crate::error::{ProviderError, TransportError};
 
 /// Applies Bearer auth and JSON accept headers to a caller-provided builder, then builds.
 ///
@@ -28,66 +35,6 @@ pub fn build_client(
         .map_err(TransportError::BuildClient)
 }
 
-/// Executes a JSON request and deserializes the response body.
-pub async fn request_json<Req, Resp>(
-    http: &reqwest::Client,
-    base_url: &str,
-    method: Method,
-    path: &str,
-    body: Option<&Req>,
-    extra_headers: Option<&HeaderMap>,
-) -> Result<Resp, TransportError>
-where
-    Req: Serialize + ?Sized,
-    Resp: DeserializeOwned,
-{
-    let response = request::<Req>(http, base_url, method, path, body, extra_headers).await?;
-    parse_json::<Resp>(response).await
-}
-
-/// Executes a request and returns the successful raw response.
-///
-/// `extra_headers` are merged last (after body/Content-Type), overriding any matching
-/// default or per-request headers. Pass `None` to rely solely on the client's defaults.
-pub async fn request<Req>(
-    http: &reqwest::Client,
-    base_url: &str,
-    method: Method,
-    path: &str,
-    body: Option<&Req>,
-    extra_headers: Option<&HeaderMap>,
-) -> Result<Response, TransportError>
-where
-    Req: Serialize + ?Sized,
-{
-    let url = endpoint_url(base_url, path);
-    let mut request = http.request(method, url);
-
-    if let Some(body) = body {
-        let payload = serde_json::to_vec(body).map_err(TransportError::Serialize)?;
-        request = request
-            .header(CONTENT_TYPE, "application/json")
-            .body(payload);
-    }
-
-    // Apply extra headers last so caller overrides take precedence.
-    if let Some(headers) = extra_headers {
-        request = request.headers(headers.clone());
-    }
-
-    let response = request.send().await.map_err(TransportError::Transport)?;
-    ensure_success(response).await
-}
-
-/// Converts a successful HTTP response into JSON.
-pub async fn parse_json<T>(response: Response) -> Result<T, TransportError>
-where
-    T: DeserializeOwned,
-{
-    let body = response.text().await.map_err(TransportError::Transport)?;
-    serde_json::from_str(&body).map_err(|source| TransportError::Deserialize { source, body })
-}
-
 /// Returns an error for non-success HTTP responses while preserving the raw response body.
 pub async fn ensure_success(response: Response) -> Result<Response, TransportError> {
     let status = response.status();
@@ -100,11 +47,91 @@ pub async fn ensure_success(response: Response) -> Result<Response, TransportErr
     Err(TransportError::HttpStatus { status, body })
 }
 
-/// Joins a base URL and endpoint path without duplicating slashes.
-pub fn endpoint_url(base_url: &str, path: &str) -> String {
-    format!(
-        "{}/{}",
-        base_url.trim_end_matches('/'),
-        path.trim_start_matches('/')
-    )
+/// Joins a base URL and endpoint path using standards-compliant URL resolution.
+///
+/// Uses [`reqwest::Url::join`] (WHATWG URL Standard) to correctly handle trailing slashes,
+/// query strings, and path segments.
+///
+/// # Errors
+///
+/// Returns [`TransportError::InvalidConfig`] if `base_url` is not a valid absolute URL.
+pub fn endpoint_url(base_url: &str, path: &str) -> Result<String, TransportError> {
+    let mut base = reqwest::Url::parse(base_url)
+        .map_err(|_| TransportError::InvalidConfig("invalid base URL"))?;
+    // Ensure the base URL ends with '/' so that WHATWG resolution preserves all
+    // existing path segments.  Without this, `https://api.example.com/v1` joined
+    // with `chat/completions` would yield `https://api.example.com/chat/completions`
+    // (dropping `v1`) because WHATWG treats the last segment as a "file".
+    if !base.path().ends_with('/') {
+        let mut p = base.path().to_owned();
+        p.push('/');
+        base.set_path(&p);
+    }
+    let full = base
+        .join(path.trim_start_matches('/'))
+        .map_err(|_| TransportError::InvalidConfig("invalid endpoint path"))?;
+    Ok(full.into())
+}
+
+/// Checks HTTP status, then reads the response body and deserializes it as JSON.
+///
+/// A non-success status is returned as a [`TransportError::HttpStatus`] (with the raw body
+/// preserved) before deserialization is attempted; on deserialization failure the raw body text
+/// is likewise preserved in the error for diagnostics.
+pub async fn parse_json<T: DeserializeOwned>(response: Response) -> Result<T, ProviderError> {
+    let response = ensure_success(response).await?;
+    let body = response.text().await.map_err(TransportError::Transport)?;
+    serde_json::from_str(&body).map_err(|source| ProviderError::Deserialize { source, body })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn endpoint_url_resolves_paths_correctly() {
+        // WHATWG URL resolution treats the last segment as a "file" and replaces it
+        // when joining a relative path.  Our wrapper must preserve all path segments.
+        let cases = [
+            // (base_url, path, expected)
+            (
+                "https://api.example.com/v1",
+                "chat/completions",
+                "https://api.example.com/v1/chat/completions",
+            ),
+            (
+                "https://api.example.com/v1/",
+                "chat/completions",
+                "https://api.example.com/v1/chat/completions",
+            ),
+            (
+                "https://api.example.com/v1",
+                "/chat/completions",
+                "https://api.example.com/v1/chat/completions",
+            ),
+            (
+                "https://api.deepseek.com",
+                "chat/completions",
+                "https://api.deepseek.com/chat/completions",
+            ),
+            (
+                "https://proxy.example.com/openai/v1",
+                "chat/completions",
+                "https://proxy.example.com/openai/v1/chat/completions",
+            ),
+        ];
+
+        for (base, path, expected) in cases {
+            assert_eq!(
+                endpoint_url(base, path).unwrap(),
+                expected,
+                "endpoint_url({base:?}, {path:?})"
+            );
+        }
+    }
+
+    #[test]
+    fn endpoint_url_rejects_invalid_base() {
+        assert!(endpoint_url("not a url", "chat/completions").is_err());
+    }
 }

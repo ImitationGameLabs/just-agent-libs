@@ -50,7 +50,7 @@ impl ProviderEntry for OpenAiCompatProvider {
             .api_key(&self.api_key)
             .base_url(&self.base_url)
             .build()
-            .map_err(|source| LlmError::backend("openai-compatible", source))?;
-        Ok(Arc::new(OpenAiCompatBackend::new(client)))
+            .map_err(|e| LlmError::backend("openai-compatible", e))?;
+        Ok(Arc::new(OpenAiCompatBackend::from_client(client)))
     }
 }

@@ -249,6 +249,29 @@ async fn preserves_http_error_body() {
 }
 
 #[tokio::test]
+async fn stream_chat_completion_preserves_http_error_body() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(ResponseTemplate::new(401).set_body_string("invalid auth"))
+        .mount(&server)
+        .await;
+
+    let error = client(&server)
+        .stream_chat_completion(basic_request())
+        .await
+        .unwrap_err();
+
+    match error {
+        Error::Transport(TransportError::HttpStatus { status, body }) => {
+            assert_eq!(status.as_u16(), 401);
+            assert_eq!(body, "invalid auth");
+        }
+        other => panic!("unexpected error: {other:?}"),
+    }
+}
+
+#[tokio::test]
 async fn rejects_streaming_response_without_sse_content_type() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))

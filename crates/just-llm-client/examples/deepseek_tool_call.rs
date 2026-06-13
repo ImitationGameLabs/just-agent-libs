@@ -1,5 +1,6 @@
 mod common;
 
+use just_llm_client::build_client;
 use just_llm_client::{
     LlmBackend,
     provider::DeepSeekBackend,
@@ -13,14 +14,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().expect("failed to load .env file");
 
     let api_key = common::expect_env("JUST_LLM_DEEPSEEK_API_KEY");
-    let base_url = std::env::var("JUST_LLM_DEEPSEEK_BASE_URL").ok();
+    let base_url = std::env::var("JUST_LLM_DEEPSEEK_BASE_URL")
+        .unwrap_or_else(|_| "https://api.deepseek.com".to_owned());
     let model = common::expect_env("JUST_LLM_DEEPSEEK_MODEL");
 
-    let mut builder = just_deepseek::DeepSeekClient::builder().api_key(api_key);
-    if let Some(url) = &base_url {
-        builder = builder.base_url(url);
-    }
-    let backend = DeepSeekBackend::new(builder.build()?);
+    let http = build_client(
+        reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(60))
+            .use_rustls_tls(),
+        &api_key,
+    )?;
+    let backend = DeepSeekBackend::new(http, base_url);
 
     let tools = vec![ToolDefinition {
         kind: ToolType::Function,

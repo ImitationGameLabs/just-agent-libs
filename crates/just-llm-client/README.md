@@ -13,17 +13,19 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 ```rust,no_run
 use just_llm_client::{
-    ChatCompletion,
+    build_client,
+    LlmBackend,
     provider::DeepSeekBackend,
     types::chat::{ChatCompletionRequest, ChatMessage},
 };
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let client = just_deepseek::DeepSeekClient::builder()
-        .api_key("your-api-key")
-        .build()?;
-    let backend = DeepSeekBackend::new(client);
+    let http = build_client(
+        reqwest::Client::builder().use_rustls_tls(),
+        "your-api-key",
+    )?;
+    let backend = DeepSeekBackend::new(http, "https://api.deepseek.com".to_owned());
 
     let response = backend
         .chat_completion(
@@ -56,11 +58,11 @@ just-llm-client = { version = "0.1", default-features = false, features = ["deep
 
 ## Ecosystem
 
-| Crate                | Description                               |
-| -------------------- | ----------------------------------------- |
-| [just-deepseek]      | Rust client for the DeepSeek API          |
-| [just-openai-compat] | Rust client for any OpenAI-compatible API |
-| [just-common]        | Shared transport and error types          |
+| Crate                | Description                                     |
+| -------------------- | ----------------------------------------------- |
+| [just-deepseek]      | DeepSeek API client + wire-level types          |
+| [just-openai-compat] | OpenAI-compatible API client + wire-level types |
+| [just-common]        | Shared HTTP transport and error types           |
 
 [just-deepseek]: https://crates.io/crates/just-deepseek
 [just-openai-compat]: https://crates.io/crates/just-openai-compat

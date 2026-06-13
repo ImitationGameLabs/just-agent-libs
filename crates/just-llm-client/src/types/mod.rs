@@ -6,5 +6,3 @@ pub mod balance;
 pub mod chat;
 /// Normalized model catalog types.
 pub mod model;
-/// Backend-bound prepared request types.
-pub mod prepared;

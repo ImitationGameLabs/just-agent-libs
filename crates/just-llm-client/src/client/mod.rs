@@ -4,7 +4,8 @@
 //! For provider-specific behavior not covered by [`LlmBackend`](crate::LlmBackend),
 //! construct the concrete backend directly via
 //! [`DeepSeekBackend`](crate::provider::DeepSeekBackend) or
-//! [`OpenAiCompatBackend`](crate::provider::OpenAiCompatBackend).
+//! [`OpenAiCompatBackend`](crate::provider::OpenAiCompatBackend), passing a
+//! `reqwest::Client` and base URL to [`new`](crate::provider::DeepSeekBackend::new).
 
 #[cfg(feature = "deepseek")]
 mod deepseek;

@@ -1,3 +1,5 @@
+//! Stream type for OpenAI-compatible chat completion SSE chunks.
+
 use std::{
     fmt,
     pin::Pin,
@@ -5,10 +7,10 @@ use std::{
 };
 
 use futures_core::Stream;
+use just_common::error::TransportError;
 use just_common::transport::sse::JsonEventStream;
 
 use crate::types::chat::ChatCompletionChunk;
-use just_common::error::TransportError;
 
 /// Stream of OpenAI-compatible chat-completion SSE chunks.
 pub struct ChatCompletionStream {
@@ -35,10 +37,6 @@ impl Stream for ChatCompletionStream {
     type Item = Result<ChatCompletionChunk, TransportError>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        match std::task::ready!(Pin::new(&mut self.inner).poll_next(cx)) {
-            Some(Ok(chunk)) => Poll::Ready(Some(Ok(chunk))),
-            Some(Err(e)) => Poll::Ready(Some(Err(e))),
-            None => Poll::Ready(None),
-        }
+        Pin::new(&mut self.inner).poll_next(cx)
     }
 }

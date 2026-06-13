@@ -1,30 +1,32 @@
-//! Streaming chat completion via [`DeepSeekClient`].
+//! Streaming chat completion using `OpenAiCompatClient`.
 //!
 //! ```bash
-//! JUST_LLM_DEEPSEEK_API_KEY=your-key JUST_LLM_DEEPSEEK_MODEL=deepseek-chat \
-//!   cargo run -p just-deepseek --example streaming_chat_completion
+//! JUST_LLM_OPENAI_COMPAT_API_KEY=your-key \
+//! JUST_LLM_OPENAI_COMPAT_BASE_URL=https://your-endpoint/v1 \
+//! JUST_LLM_OPENAI_COMPAT_MODEL=gpt-4.1-mini \
+//!   cargo run -p just-openai-compat --example openai_compat_streaming_chat_completion
 //! ```
 
 use futures_util::StreamExt;
-use just_deepseek::types::chat::{ChatCompletionRequest, ChatMessage, StreamOptions};
-use just_deepseek::{DeepSeekClient, Error};
+use just_openai_compat::OpenAiCompatClient;
+use just_openai_compat::types::chat::{ChatCompletionRequest, ChatMessage, StreamOptions};
 
 #[tokio::main]
-async fn main() -> Result<(), Error> {
-    dotenvy::dotenv().ok();
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    dotenvy::dotenv().expect("failed to load .env file");
 
-    let api_key =
-        std::env::var("JUST_LLM_DEEPSEEK_API_KEY").expect("JUST_LLM_DEEPSEEK_API_KEY must be set");
-    let base_url = std::env::var("JUST_LLM_DEEPSEEK_BASE_URL").ok();
-    let model =
-        std::env::var("JUST_LLM_DEEPSEEK_MODEL").expect("JUST_LLM_DEEPSEEK_MODEL must be set");
+    let api_key = std::env::var("JUST_LLM_OPENAI_COMPAT_API_KEY")
+        .expect("JUST_LLM_OPENAI_COMPAT_API_KEY must be set");
+    let base_url = std::env::var("JUST_LLM_OPENAI_COMPAT_BASE_URL")
+        .expect("JUST_LLM_OPENAI_COMPAT_BASE_URL must be set");
+    let model = std::env::var("JUST_LLM_OPENAI_COMPAT_MODEL")
+        .expect("JUST_LLM_OPENAI_COMPAT_MODEL must be set");
     let prompt = "Explain Rust ownership in two sentences.";
 
-    let mut builder = DeepSeekClient::builder().api_key(&api_key);
-    if let Some(url) = base_url {
-        builder = builder.base_url(&url);
-    }
-    let client = builder.build()?;
+    let client = OpenAiCompatClient::builder()
+        .api_key(&api_key)
+        .base_url(&base_url)
+        .build()?;
 
     let mut request = ChatCompletionRequest::new(
         model,
@@ -48,9 +50,6 @@ async fn main() -> Result<(), Error> {
     while let Some(result) = stream.next().await {
         let chunk = result?;
         for choice in &chunk.choices {
-            if let Some(reasoning) = &choice.delta.reasoning_content {
-                print!("{reasoning}");
-            }
             if let Some(content) = &choice.delta.content {
                 print!("{content}");
             }

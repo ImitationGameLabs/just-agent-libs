@@ -1,4 +1,4 @@
-//! Shared error types for transport and prepared-request validation.
+//! Shared error types for the transport layer and provider clients.
 
 use std::string::FromUtf8Error;
 use thiserror::Error;
@@ -7,6 +7,7 @@ use reqwest::StatusCode;
 
 /// Errors produced by the shared HTTP/SSE transport layer.
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum TransportError {
     #[error("invalid configuration: {0}")]
     InvalidConfig(&'static str),
@@ -19,9 +20,6 @@ pub enum TransportError {
 
     #[error("api returned {status}")]
     HttpStatus { status: StatusCode, body: String },
-
-    #[error("failed to serialize request body: {0}")]
-    Serialize(#[source] serde_json::Error),
 
     #[error("failed to deserialize response body: {source}")]
     Deserialize {
@@ -37,18 +35,27 @@ pub enum TransportError {
     InvalidResponse(String),
 }
 
-/// Errors produced when constructing or validating a [`PreparedChatRequest`](crate::prepared::PreparedChatRequest).
+/// Generic error type for OpenAI-compatible API provider clients.
 #[derive(Debug, Error)]
-pub enum PreparedRequestError {
-    /// The request body is not a JSON object.
-    #[error("prepared request body must be a JSON object")]
-    NotJsonObject,
+#[non_exhaustive]
+pub enum ProviderError {
+    /// Transport-layer error from the shared HTTP/SSE layer.
+    #[error(transparent)]
+    Transport(#[from] TransportError),
 
-    /// The request body is missing a string `model` field.
-    #[error("prepared request body must include a string model field")]
-    MissingModelField,
+    /// The request shape was invalid for the selected client method.
+    #[error("invalid request: {0}")]
+    InvalidRequest(String),
 
-    /// The request body is missing a `messages` array.
-    #[error("prepared request body must include a messages array")]
-    MissingMessagesArray,
+    /// Failed to serialize the request body.
+    #[error("serialization failed: {0}")]
+    Serialize(#[from] serde_json::Error),
+
+    /// Failed to deserialize the response body.
+    #[error("failed to deserialize response body: {source}")]
+    Deserialize {
+        #[source]
+        source: serde_json::Error,
+        body: String,
+    },
 }

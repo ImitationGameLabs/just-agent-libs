@@ -49,7 +49,7 @@ async fn lists_models() {
                 {
                     "id": "gpt-4.1-mini",
                     "object": "model",
-                    "owned_by": "openai-compatible"
+                    "owned_by": "example"
                 }
             ]
         })))
@@ -113,7 +113,7 @@ async fn rejects_stream_flag_on_non_stream_method() {
 
     let error = OpenAiCompatClient::builder()
         .api_key("test-key")
-        .base_url("http://localhost")
+        .base_url("http://127.0.0.1:0")
         .build()
         .unwrap()
         .chat_completion(request)
@@ -157,51 +157,6 @@ async fn streams_chat_completion_chunks() {
 }
 
 #[tokio::test]
-async fn streams_tool_call_deltas_and_ignores_heartbeat_events() {
-    let server = MockServer::start().await;
-    let body = concat!(
-        "\n\n",
-        ": ping\n\n",
-        "data: {\"id\":\"chatcmpl-tool-1\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"gpt-4.1-mini\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"type\":\"function\",\"function\":{\"name\":\"lookup_weather\",\"arguments\":\"\"}}]},\"finish_reason\":null}],\"usage\":null}\n\n",
-        "data: {\"id\":\"chatcmpl-tool-1\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"gpt-4.1-mini\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"{\\\"city\\\":\\\"Shanghai\\\"}\"}}]},\"finish_reason\":\"tool_calls\"}],\"usage\":null}\n\n",
-        "data: [DONE]\n\n"
-    );
-
-    Mock::given(method("POST"))
-        .and(path("/chat/completions"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("content-type", "text/event-stream")
-                .set_body_raw(body, "text/event-stream"),
-        )
-        .mount(&server)
-        .await;
-
-    let mut stream: ChatCompletionStream = client(&server)
-        .stream_chat_completion(basic_request())
-        .await
-        .unwrap();
-
-    let first = stream.next().await.unwrap().unwrap();
-    let second = stream.next().await.unwrap().unwrap();
-
-    let first_call = &first.choices[0].delta.tool_calls.as_ref().unwrap()[0];
-    assert_eq!(first_call.id.as_deref(), Some("call_1"));
-    let first_function = first_call.function.as_ref().unwrap();
-    assert_eq!(first_function.name.as_deref(), Some("lookup_weather"));
-    assert_eq!(first_function.arguments.as_deref(), Some(""));
-
-    let second_call = &second.choices[0].delta.tool_calls.as_ref().unwrap()[0];
-    let second_function = second_call.function.as_ref().unwrap();
-    assert_eq!(second_function.name, None);
-    assert_eq!(
-        second_function.arguments.as_deref(),
-        Some("{\"city\":\"Shanghai\"}")
-    );
-    assert!(stream.next().await.is_none());
-}
-
-#[tokio::test]
 async fn preserves_http_error_body() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -211,6 +166,29 @@ async fn preserves_http_error_body() {
         .await;
 
     let error = client(&server).list_models().await.unwrap_err();
+
+    match error {
+        Error::Transport(TransportError::HttpStatus { status, body }) => {
+            assert_eq!(status.as_u16(), 401);
+            assert_eq!(body, "invalid auth");
+        }
+        other => panic!("unexpected error: {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn stream_chat_completion_preserves_http_error_body() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(ResponseTemplate::new(401).set_body_string("invalid auth"))
+        .mount(&server)
+        .await;
+
+    let error = client(&server)
+        .stream_chat_completion(basic_request())
+        .await
+        .unwrap_err();
 
     match error {
         Error::Transport(TransportError::HttpStatus { status, body }) => {
@@ -269,7 +247,7 @@ async fn lists_models_via_injected_http_client() {
                 {
                     "id": "gpt-4.1-mini",
                     "object": "model",
-                    "owned_by": "openai-compatible"
+                    "owned_by": "example"
                 }
             ]
         })))

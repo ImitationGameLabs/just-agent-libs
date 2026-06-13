@@ -57,7 +57,7 @@ impl Stream for ChatCompletionStream {
 
 /// Root identity trait shared by all client capabilities.
 pub trait Identifiable: Send + Sync {
-    /// Returns the stable backend identifier used in error attribution and prepared-request binding.
+    /// Returns the stable backend identifier used in error attribution.
     fn backend_id(&self) -> &'static str;
 }
 

@@ -1,27 +1,27 @@
 [package]
 name = "just-deepseek"
-description = "Rust client for the DeepSeek API"
+description = "DeepSeek API client and wire-level types"
 readme = "README.md"
 edition = "2024"
 version = "0.1.0"
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-keywords = ["deepseek", "llm", "ai", "chat", "sdk"]
-categories = ["api-bindings", "web-programming::http-client", "asynchronous"]
+keywords = ["deepseek", "llm", "ai", "chat"]
+categories = ["api-bindings"]
 
 [dependencies]
-async-stream = { workspace = true }
-async-trait = { workspace = true }
-futures-core = { workspace = true }
-futures-util = { workspace = true }
 just-common = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-thiserror = { workspace = true }
+futures-core = { workspace = true }
 
 [dev-dependencies]
-dotenvy = { workspace = true }
 tokio = { workspace = true }
+dotenvy = { workspace = true }
+futures-util = { workspace = true }
 wiremock = { workspace = true }
+
+[[test]]
+name = "client"

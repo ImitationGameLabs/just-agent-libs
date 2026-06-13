@@ -9,11 +9,10 @@ mod client;
 mod client_builder;
 mod error;
 mod stream;
+pub mod transport;
 pub mod types;
 
 pub use client::DeepSeekClient;
 pub use client_builder::DeepSeekClientBuilder;
 pub use error::Error;
-pub use just_common as common;
-pub use just_common::prepared::PreparedChatRequest;
 pub use stream::ChatCompletionStream;

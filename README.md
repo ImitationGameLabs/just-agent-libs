@@ -6,22 +6,24 @@ Not an agent framework, not a platform — just the LLM client. Minimal, well-ab
 
 ### Provider-neutral client — `just-llm-client`
 
-A lightweight, provider-neutral abstraction that sits on top of the provider SDKs. Use it when you want one code path that can target multiple providers, or when you want prepared requests and capability negotiation.
+A lightweight, provider-neutral abstraction that sits on top of the provider type crates. Use it when you want one code path that can target multiple providers, or when you want prepare-send patterns and capability negotiation.
 
 - **Capability-oriented traits.** Each operation is its own trait — `ModelCatalog`, `Balance`. Backends implement only what they support, with chat completion provided by the unified `LlmBackend` trait.
 - **Explicit capability negotiation.** Optional capabilities are requested upfront — unsupported backends fail immediately, not at call time.
-- **Prepared requests.** Build, inspect, then execute.
-- **Optional tool runtime.** Enable `tools` for the local executable-tool runtime plus the built-in PTY-backed shell/session tools that compose into tool-calling loops.
+- **Prepare-send pattern.** Build a `reqwest::Request`, optionally inspect/modify it, then send. Callers get full access to the HTTP response including headers (`retry-after`, `x-ratelimit-*`).
+
 ```rust
 use just_llm_client::{
+    build_client,
     provider::{DeepSeekBackend, LlmBackend},
     types::chat::{ChatCompletionRequest, ChatMessage},
 };
 
-let client = just_deepseek::DeepSeekClient::builder()
-    .api_key("your-api-key")
-    .build()?;
-let backend = DeepSeekBackend::new(client);
+let http = build_client(
+    reqwest::Client::builder().use_rustls_tls(),
+    "your-api-key",
+)?;
+let backend = DeepSeekBackend::new(http, "https://api.deepseek.com".to_owned());
 let response = backend.chat_completion(
     ChatCompletionRequest::new(
         "deepseek-v4-flash",
@@ -30,71 +32,63 @@ let response = backend.chat_completion(
 ).await?;
 ```
 
-When you want reusable local tools next to the client layer:
-
-```toml
-just-llm-client = { version = "...", features = ["openai-compat", "tools"] }
-```
-
 #### Bring your own backend
 
-just-agent-libs aims to support more model providers over time. But if your provider is not yet covered, or you are a model provider with a custom API that does not follow any well-known protocol, you can easily build your own backend by implementing the `LlmBackend` trait. It requires `Identifiable + CapabilityNegotiation + Send + Sync` and four core methods — `prepare`, `send`, `prepare_streaming`, `send_streaming` — with convenience methods (`chat_completion`, `stream_chat_completion`) provided by default:
+just-agent-libs aims to support more model providers over time. But if your provider is not yet covered, or you are a model provider with a custom API that does not follow any well-known protocol, you can easily build your own backend by implementing the `LlmBackend` trait. It requires `Identifiable + CapabilityNegotiation + Send + Sync` and seven methods: `prepare`, `prepare_streaming`, `send`, `chat_completion`, `stream_chat_completion`, `render_messages`, `render_tools`.
 
 ```rust
 struct MyBackend { /* ... */ }
 
-#[async_trait]
 impl Identifiable for MyBackend {
     fn backend_id(&self) -> &'static str { "my-backend" }
 }
 
+impl CapabilityNegotiation for MyBackend {}
+
 #[async_trait]
 impl LlmBackend for MyBackend {
     fn prepare(&self, request: ChatCompletionRequest)
-        -> Result<PreparedChatRequest, LlmError> { /* ... */ }
-
-    async fn send(&self, prepared: &PreparedChatRequest)
-        -> Result<ChatCompletionResponse, LlmError> { /* ... */ }
+        -> Result<reqwest::Request, LlmError> { /* ... */ }
 
     fn prepare_streaming(&self, request: ChatCompletionRequest)
-        -> Result<PreparedChatRequest, LlmError> { /* ... */ }
+        -> Result<reqwest::Request, LlmError> { /* ... */ }
 
-    async fn send_streaming(&self, prepared: &PreparedChatRequest)
+    async fn send(&self, prepared: reqwest::Request)
+        -> Result<reqwest::Response, LlmError> { /* ... */ }
+
+    async fn chat_completion(&self, request: ChatCompletionRequest)
+        -> Result<ChatCompletionResponse, LlmError> { /* ... */ }
+
+    async fn stream_chat_completion(&self, request: ChatCompletionRequest)
         -> Result<ChatCompletionStream, LlmError> { /* ... */ }
+
+    fn render_messages(&self, messages: &[ChatMessage])
+        -> Result<String, LlmError> { /* ... */ }
+
+    fn render_tools(&self, tools: &[ToolDefinition])
+        -> Result<String, LlmError> { /* ... */ }
 }
 ```
 
 The validation module (`just_llm_client::provider::validation`) provides reusable helpers for building custom backends.
 
-### Provider-specific SDKs — direct API bindings
+### Provider type crates
 
-Direct Rust bindings to model provider HTTP APIs — wire-level DTOs, no extra abstraction. Use these when you need full control over a specific provider's wire protocol, or as building blocks for your own neutral layer or agent framework.
+Wire-level request/response types with serde derives, plus a thin async client and re-exported
+HTTP transport helpers. Use these when you need full control over a specific provider's wire
+protocol, or as building blocks for your own client layer or agent framework.
 
-| Crate                | Description                                                    |
-| -------------------- | -------------------------------------------------------------- |
-| `just-deepseek`      | DeepSeek API — chat completions, model listing, balance lookup |
-| `just-openai-compat` | Any OpenAI-compatible API — chat completions, model listing    |
+| Crate                | Description                                                                |
+| -------------------- | -------------------------------------------------------------------------- |
+| `just-deepseek`      | DeepSeek API client + wire-level types — chat completions, models, balance |
+| `just-openai-compat` | OpenAI-compatible API client + wire-level types — chat completions, models |
 
 Bindings for OpenAI, Google, xAI, Anthropic, and others are planned but deferred until needed. If you urgently need a specific provider, feel free to open an issue so we can prioritize it.
 
-```rust
-use just_deepseek::{DeepSeekClient, types::chat::{ChatMessage, ChatCompletionRequest}};
-
-let client = DeepSeekClient::builder()
-    .api_key("your-api-key")
-    .build()?;
-let response = client.chat_completion(
-    ChatCompletionRequest::new(
-        "deepseek-v4-flash",
-        vec![ChatMessage::user("Say hello.")],
-    ),
-).await?;
-```
-
 ## Documentation
 
-- [just-llm-client](docs/usage/just-llm-client.md) — capability model, initialization styles, and prepared requests
-- [Provider-specific clients](docs/usage/provider-specific-clients.md) — direct SDK usage, streaming, and environment variables
+- [just-llm-client](docs/usage/just-llm-client.md) — capability model, initialization styles, and prepare-send pattern
+- [Provider type crates](docs/usage/provider-type-crates.md) — wire-level DTOs and environment variables
 
 ## Quick start
 
@@ -103,8 +97,4 @@ let response = client.chat_completion(
 cargo run -p just-llm-client --example deepseek_simple_chat
 cargo run -p just-llm-client --example openai_compat_simple_chat
 cargo run -p just-llm-client --example runtime_selected_provider
-
-# Provider-specific SDK examples
-cargo run -p just-deepseek --example deepseek_chat_completion
-cargo run -p just-openai-compat --example openai_compat_chat_completion
 ```

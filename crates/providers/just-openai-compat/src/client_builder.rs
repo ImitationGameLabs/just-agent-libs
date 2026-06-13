@@ -1,3 +1,5 @@
+//! Builder for [`OpenAiCompatClient`].
+
 use std::time::Duration;
 
 use just_common::error::TransportError;
@@ -75,10 +77,7 @@ impl OpenAiCompatClientBuilder {
 
         let http = http::build_client(builder, &api_key)?;
 
-        Ok(OpenAiCompatClient::new(
-            http,
-            base_url.trim_end_matches('/').to_owned(),
-        ))
+        Ok(OpenAiCompatClient::new(http, base_url))
     }
 }
 

@@ -1,3 +1,5 @@
+//! Builder for [`DeepSeekClient`].
+
 use std::time::Duration;
 
 use just_common::error::TransportError;
@@ -74,10 +76,7 @@ impl DeepSeekClientBuilder {
 
         let http = http::build_client(builder, &api_key)?;
 
-        Ok(DeepSeekClient::new(
-            http,
-            base_url.trim_end_matches('/').to_owned(),
-        ))
+        Ok(DeepSeekClient::new(http, base_url))
     }
 }
 

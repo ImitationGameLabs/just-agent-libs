@@ -31,8 +31,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  [system] You are a concise assistant.");
     println!("  [user] {prompt}");
 
-    let prepared = client.prepare(client.create_request(vec![ChatMessage::user(prompt)]))?;
-    let response = client.send(&prepared).await?;
+    let request = client.create_request(vec![ChatMessage::user(prompt)]);
+    let response = client.chat_completion(request).await?;
 
     println!("\n--- response 1 ---");
     if let Some(rc) = response.first_choice_reasoning_content() {

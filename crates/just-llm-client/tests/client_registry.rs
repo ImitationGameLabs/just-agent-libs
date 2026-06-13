@@ -10,15 +10,11 @@ use just_llm_client::{
     ProviderRegistry,
     error::LlmError,
     provider::LlmBackend,
-    types::{
-        chat::{
-            AssistantMessage, AssistantRole, ChatChoice, ChatCompletionRequest,
-            ChatCompletionResponse, ChatMessage,
-        },
-        prepared::PreparedChatRequest,
+    types::chat::{
+        AssistantMessage, AssistantRole, ChatChoice, ChatCompletionRequest, ChatCompletionResponse,
+        ChatMessage, ToolDefinition,
     },
 };
-use serde_json::json;
 
 struct TestProvider {
     id: String,
@@ -49,12 +45,14 @@ impl ProviderEntry for TestProvider {
         self.connect_count.fetch_add(1, Ordering::SeqCst);
         Ok(Arc::new(TestBackend {
             backend_id: self.provider,
+            http: reqwest::Client::new(),
         }))
     }
 }
 
 struct TestBackend {
     backend_id: &'static str,
+    http: reqwest::Client,
 }
 
 impl just_llm_client::Identifiable for TestBackend {
@@ -67,38 +65,57 @@ impl CapabilityNegotiation for TestBackend {}
 
 #[async_trait]
 impl LlmBackend for TestBackend {
-    fn prepare(&self, request: ChatCompletionRequest) -> Result<PreparedChatRequest, LlmError> {
-        PreparedChatRequest::from_request_body(
-            self.backend_id,
-            json!({
+    fn prepare(&self, request: ChatCompletionRequest) -> Result<reqwest::Request, LlmError> {
+        // Build a request pointing at an unreachable URL — the test
+        // overrides chat_completion() below so this is never actually sent.
+        let url = "http://127.0.0.1:0/chat/completions";
+        self.http
+            .post(url)
+            .json(&serde_json::json!({
                 "model": request.model,
                 "messages": request.messages,
-            }),
-        )
-        .map_err(LlmError::from)
-    }
-
-    async fn send(
-        &self,
-        prepared: &PreparedChatRequest,
-    ) -> Result<ChatCompletionResponse, LlmError> {
-        Ok(response_for_model(
-            prepared.model().unwrap_or("missing-model").to_owned(),
-        ))
+            }))
+            .build()
+            .map_err(|e| {
+                LlmError::backend(
+                    self.backend_id,
+                    just_common::error::TransportError::Transport(e),
+                )
+            })
     }
 
     fn prepare_streaming(
         &self,
         request: ChatCompletionRequest,
-    ) -> Result<PreparedChatRequest, LlmError> {
+    ) -> Result<reqwest::Request, LlmError> {
         self.prepare(request)
     }
 
-    async fn send_streaming(
+    async fn send(&self, _prepared: reqwest::Request) -> Result<reqwest::Response, LlmError> {
+        // Never called — chat_completion() is overridden below.
+        todo!("send is not used by these tests")
+    }
+
+    async fn chat_completion(
         &self,
-        _prepared: &PreparedChatRequest,
+        request: ChatCompletionRequest,
+    ) -> Result<ChatCompletionResponse, LlmError> {
+        Ok(response_for_model(request.model))
+    }
+
+    async fn stream_chat_completion(
+        &self,
+        _request: ChatCompletionRequest,
     ) -> Result<ChatCompletionStream, LlmError> {
         Ok(ChatCompletionStream::new(Box::pin(stream::empty())))
+    }
+
+    fn render_messages(&self, _messages: &[ChatMessage]) -> Result<String, LlmError> {
+        Ok("[]".to_owned())
+    }
+
+    fn render_tools(&self, _tools: &[ToolDefinition]) -> Result<String, LlmError> {
+        Ok("[]".to_owned())
     }
 }
 

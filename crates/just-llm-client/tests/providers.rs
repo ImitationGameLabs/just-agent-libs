@@ -9,13 +9,15 @@ use just_llm_client::CapabilityNegotiation;
 use just_llm_client::provider::DeepSeekBackend;
 #[cfg(feature = "openai-compat")]
 use just_llm_client::provider::OpenAiCompatBackend;
+#[cfg(any(feature = "deepseek", feature = "openai-compat"))]
+use just_llm_client::types::chat::{ChatToolCall, FunctionCall, FunctionDefinition, ToolType};
 #[cfg(feature = "deepseek")]
 use just_llm_client::types::chat::{ToolChoice, ToolChoiceMode};
 #[cfg(any(feature = "deepseek", feature = "openai-compat"))]
 use just_llm_client::{
     LlmBackend,
     error::LlmError,
-    types::chat::{ChatCompletionRequest, ChatMessage},
+    types::chat::{ChatCompletionRequest, ChatMessage, ToolDefinition},
 };
 #[cfg(any(feature = "deepseek", feature = "openai-compat"))]
 use serde_json::json;
@@ -27,22 +29,30 @@ use wiremock::{
 
 #[cfg(feature = "deepseek")]
 fn deepseek_backend(server: &MockServer) -> DeepSeekBackend {
-    let client = just_deepseek::DeepSeekClient::builder()
-        .api_key("test-key")
-        .base_url(server.uri())
-        .build()
-        .unwrap();
-    DeepSeekBackend::new(client)
+    let builder = reqwest::Client::builder().use_rustls_tls();
+    let http = just_common::transport::http::build_client(builder, "test-key").unwrap();
+    DeepSeekBackend::new(http, server.uri())
+}
+
+#[cfg(feature = "deepseek")]
+fn deepseek_backend_no_server() -> DeepSeekBackend {
+    let builder = reqwest::Client::builder().use_rustls_tls();
+    let http = just_common::transport::http::build_client(builder, "test-key").unwrap();
+    DeepSeekBackend::new(http, "http://127.0.0.1:0".to_owned())
 }
 
 #[cfg(feature = "openai-compat")]
 fn openai_backend(server: &MockServer) -> OpenAiCompatBackend {
-    let client = just_openai_compat::OpenAiCompatClient::builder()
-        .api_key("test-key")
-        .base_url(server.uri())
-        .build()
-        .unwrap();
-    OpenAiCompatBackend::new(client)
+    let builder = reqwest::Client::builder().use_rustls_tls();
+    let http = just_common::transport::http::build_client(builder, "test-key").unwrap();
+    OpenAiCompatBackend::new(http, server.uri())
+}
+
+#[cfg(feature = "openai-compat")]
+fn openai_backend_no_server() -> OpenAiCompatBackend {
+    let builder = reqwest::Client::builder().use_rustls_tls();
+    let http = just_common::transport::http::build_client(builder, "test-key").unwrap();
+    OpenAiCompatBackend::new(http, "http://127.0.0.1:0".to_owned())
 }
 
 // --- DeepSeek tests ---
@@ -216,92 +226,37 @@ async fn openai_compat_adapter_maps_models_and_marks_balance_unsupported() {
 
 #[cfg(feature = "openai-compat")]
 #[tokio::test]
-async fn prepared_requests_can_be_previewed_and_executed() {
+async fn prepare_send_returns_raw_response_with_accessible_headers() {
     let server = MockServer::start().await;
 
     Mock::given(method("POST"))
         .and(path("/chat/completions"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "id": "chatcmpl-2",
-            "object": "chat.completion",
-            "created": 1,
-            "model": "gpt-4.1-mini",
-            "choices": [
-                {
-                    "index": 0,
-                    "finish_reason": "stop",
-                    "message": {
-                        "role": "assistant",
-                        "content": "prepared"
-                    }
-                }
-            ]
-        })))
+        .respond_with(
+            ResponseTemplate::new(429)
+                .insert_header("retry-after", "30")
+                .set_body_json(json!({
+                    "error": {"message": "rate limited", "type": "rate_limit_error"}
+                })),
+        )
         .mount(&server)
         .await;
 
     let backend = openai_backend(&server);
-    let prepared = backend
+    let builder = backend
         .prepare(ChatCompletionRequest::new(
             "gpt-4.1-mini",
-            vec![ChatMessage::user("hello from prepared")],
+            vec![ChatMessage::user("hello")],
         ))
         .unwrap();
 
-    assert_eq!(prepared.backend_id(), "openai-compatible");
-    assert_eq!(prepared.model(), Some("gpt-4.1-mini"));
-    assert_eq!(prepared.message_count(), 1);
-    assert!(prepared.request_body_text().contains("\"messages\""));
+    // send() returns the raw reqwest::Response — headers are accessible.
+    let response = backend.send(builder).await.unwrap();
 
-    let response = backend.send(&prepared).await.unwrap();
-
-    assert_eq!(response.first_choice_content(), Some("prepared"));
-}
-
-#[cfg(feature = "openai-compat")]
-#[tokio::test]
-async fn prepared_requests_round_trip_and_execute_through_backend() {
-    let server = MockServer::start().await;
-
-    Mock::given(method("POST"))
-        .and(path("/chat/completions"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "id": "chatcmpl-roundtrip",
-            "object": "chat.completion",
-            "created": 1,
-            "model": "gpt-4.1-mini",
-            "choices": [
-                {
-                    "index": 0,
-                    "finish_reason": "stop",
-                    "message": {
-                        "role": "assistant",
-                        "content": "round trip"
-                    }
-                }
-            ]
-        })))
-        .mount(&server)
-        .await;
-
-    let backend = openai_backend(&server);
-    let prepared = backend
-        .prepare(ChatCompletionRequest::new(
-            "gpt-4.1-mini",
-            vec![ChatMessage::user("round trip")],
-        ))
-        .unwrap();
-
-    // Verify field accessors are consistent.
-    assert_eq!(prepared.backend_id(), "openai-compatible");
-    assert_eq!(prepared.model(), Some("gpt-4.1-mini"));
-    assert_eq!(prepared.message_count(), 1);
-    assert!(!prepared.has_stream());
-    assert_eq!(prepared.headers().len(), 0);
-
-    let response = backend.send(&prepared).await.unwrap();
-
-    assert_eq!(response.first_choice_content(), Some("round trip"));
+    assert_eq!(response.status(), reqwest::StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(
+        response.headers().get("retry-after").unwrap(),
+        reqwest::header::HeaderValue::from_static("30")
+    );
 }
 
 #[cfg(feature = "openai-compat")]
@@ -343,78 +298,6 @@ async fn stream_chat_completion_promotes_stream_flag() {
         ))
         .await
         .unwrap();
-}
-
-#[cfg(feature = "openai-compat")]
-#[tokio::test]
-async fn prepared_streaming_requests_can_be_previewed_and_executed() {
-    let server = MockServer::start().await;
-
-    Mock::given(method("POST"))
-        .and(path("/chat/completions"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("content-type", "text/event-stream")
-                .set_body_raw(
-                    "data: {\"id\":\"chatcmpl-stream-prepared\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"gpt-4.1-mini\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hi\"}}]}\n\ndata: [DONE]\n",
-                    "text/event-stream",
-                ),
-        )
-        .mount(&server)
-        .await;
-
-    let backend = openai_backend(&server);
-    let prepared = backend
-        .prepare_streaming(ChatCompletionRequest::new(
-            "gpt-4.1-mini",
-            vec![ChatMessage::user("stream please")],
-        ))
-        .unwrap();
-
-    assert!(prepared.has_stream());
-    assert_eq!(prepared.headers().len(), 0);
-
-    let mut stream = backend.send_streaming(&prepared).await.unwrap();
-    let first = stream.next().await.unwrap().unwrap();
-
-    assert_eq!(first.choices[0].delta.content.as_deref(), Some("hi"));
-}
-
-#[cfg(feature = "openai-compat")]
-#[tokio::test]
-async fn non_stream_sender_rejects_prepared_streaming_requests() {
-    let server = MockServer::start().await;
-    let backend = openai_backend(&server);
-    let prepared = backend
-        .prepare_streaming(ChatCompletionRequest::new(
-            "gpt-4.1-mini",
-            vec![ChatMessage::user("stream please")],
-        ))
-        .unwrap();
-
-    let error = backend.send(&prepared).await.unwrap_err();
-
-    assert!(matches!(error, LlmError::InvalidRequest(_)));
-}
-
-#[cfg(feature = "openai-compat")]
-#[tokio::test]
-async fn stream_sender_rejects_non_stream_prepared_requests() {
-    let server = MockServer::start().await;
-    let backend = openai_backend(&server);
-    let prepared = backend
-        .prepare(ChatCompletionRequest::new(
-            "gpt-4.1-mini",
-            vec![ChatMessage::user("hello")],
-        ))
-        .unwrap();
-
-    let error = match backend.send_streaming(&prepared).await {
-        Ok(_) => panic!("stream sender should reject non-stream prepared requests"),
-        Err(error) => error,
-    };
-
-    assert!(matches!(error, LlmError::InvalidRequest(_)));
 }
 
 #[cfg(feature = "openai-compat")]
@@ -514,146 +397,262 @@ async fn openai_compat_adapter_maps_streaming_tool_call_deltas() {
     );
 }
 
-// --- Cross-backend tests ---
+// --- render_messages / render_tools tests ---
 
-#[cfg(all(feature = "deepseek", feature = "openai-compat"))]
-#[tokio::test]
-async fn prepared_requests_reject_cross_backend_execution() {
-    let server = MockServer::start().await;
-    let deepseek = deepseek_backend(&server);
-    let openai = openai_backend(&server);
-    let prepared = deepseek
-        .prepare(ChatCompletionRequest::new(
-            "deepseek-v4-pro",
-            vec![ChatMessage::user("cross backend")],
-        ))
-        .unwrap();
-
-    let error = openai.send(&prepared).await.unwrap_err();
-
-    assert!(matches!(error, LlmError::InvalidRequest(_)));
-}
-
-// --- Provider-agnostic tests ---
-
+#[cfg(feature = "deepseek")]
 #[test]
-fn prepared_requests_reject_invalid_payloads() {
-    use just_llm_client::types::prepared::PreparedChatRequest;
-    use serde_json::json;
+fn deepseek_render_messages_produces_provider_json() {
+    let backend = deepseek_backend_no_server();
+    let messages = vec![
+        ChatMessage::system("You are helpful."),
+        ChatMessage::user("Hello"),
+    ];
 
-    // Missing messages array.
-    let error = PreparedChatRequest::from_request_body(
-        "openai-compatible",
-        json!({"model": "gpt-4.1-mini"}),
-    )
-    .unwrap_err();
+    let json = backend.render_messages(&messages).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
 
-    assert!(error.to_string().contains("messages array"));
-
-    // Missing model field.
-    let error = PreparedChatRequest::from_request_body(
-        "openai-compatible",
-        json!({"messages": [{"role": "user", "content": "hi"}]}),
-    )
-    .unwrap_err();
-
-    assert!(error.to_string().contains("model field"));
-
-    // Body is not a JSON object.
-    let error = PreparedChatRequest::from_request_body("openai-compatible", json!(42)).unwrap_err();
-
-    assert!(error.to_string().contains("JSON object"));
+    assert_eq!(parsed.as_array().unwrap().len(), 2);
+    assert_eq!(parsed[0]["role"], "system");
+    assert_eq!(parsed[0]["content"], "You are helpful.");
+    assert_eq!(parsed[1]["role"], "user");
+    assert_eq!(parsed[1]["content"], "Hello");
 }
 
-// --- Extra headers tests ---
+#[cfg(feature = "deepseek")]
+#[test]
+fn deepseek_render_tools_produces_provider_json() {
+    let backend = deepseek_backend_no_server();
+    let tools = vec![ToolDefinition {
+        kind: ToolType::Function,
+        function: FunctionDefinition {
+            name: "get_weather".to_owned(),
+            description: Some("Get weather".to_owned()),
+            parameters: None,
+            strict: None,
+        },
+    }];
+
+    let json = backend.render_tools(&tools).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+    assert_eq!(parsed.as_array().unwrap().len(), 1);
+    assert_eq!(parsed[0]["type"], "function");
+    assert_eq!(parsed[0]["function"]["name"], "get_weather");
+}
+
+#[cfg(feature = "deepseek")]
+#[test]
+fn deepseek_render_messages_empty_slice_returns_empty_array() {
+    let backend = deepseek_backend_no_server();
+    let json = backend.render_messages(&[]).unwrap();
+    assert_eq!(json, "[]");
+}
 
 #[cfg(feature = "openai-compat")]
-#[tokio::test]
-async fn prepared_requests_send_extra_headers_to_backend() {
-    use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
+#[test]
+fn openai_compat_render_messages_produces_provider_json() {
+    let backend = openai_backend_no_server();
+    let messages = vec![
+        ChatMessage::system("You are helpful."),
+        ChatMessage::user("Hello"),
+    ];
 
-    let server = MockServer::start().await;
+    let json = backend.render_messages(&messages).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
 
-    Mock::given(method("POST"))
-        .and(path("/chat/completions"))
-        .and(wiremock::matchers::header("x-trace-id", "test-trace-123"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "id": "chatcmpl-hdr",
-            "object": "chat.completion",
-            "created": 1,
-            "model": "gpt-4.1-mini",
-            "choices": [
-                {
-                    "index": 0,
-                    "finish_reason": "stop",
-                    "message": {
-                        "role": "assistant",
-                        "content": "with headers"
-                    }
-                }
-            ]
-        })))
-        .mount(&server)
-        .await;
+    assert_eq!(parsed.as_array().unwrap().len(), 2);
+    assert_eq!(parsed[0]["role"], "system");
+    assert_eq!(parsed[0]["content"], "You are helpful.");
+    assert_eq!(parsed[1]["role"], "user");
+    assert_eq!(parsed[1]["content"], "Hello");
+}
 
-    let backend = openai_backend(&server);
+#[cfg(feature = "openai-compat")]
+#[test]
+fn openai_compat_render_tools_produces_provider_json() {
+    let backend = openai_backend_no_server();
+    let tools = vec![ToolDefinition {
+        kind: ToolType::Function,
+        function: FunctionDefinition {
+            name: "get_weather".to_owned(),
+            description: Some("Get weather".to_owned()),
+            parameters: None,
+            strict: None,
+        },
+    }];
 
-    let mut headers = HeaderMap::new();
-    headers.insert(
-        HeaderName::from_static("x-trace-id"),
-        HeaderValue::from_static("test-trace-123"),
+    let json = backend.render_tools(&tools).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+    assert_eq!(parsed.as_array().unwrap().len(), 1);
+    assert_eq!(parsed[0]["type"], "function");
+    assert_eq!(parsed[0]["function"]["name"], "get_weather");
+}
+
+#[cfg(feature = "openai-compat")]
+#[test]
+fn openai_compat_render_messages_empty_slice_returns_empty_array() {
+    let backend = openai_backend_no_server();
+    let json = backend.render_messages(&[]).unwrap();
+    assert_eq!(json, "[]");
+}
+
+// --- render_messages with tool-call variants ---
+
+#[cfg(feature = "deepseek")]
+#[test]
+fn deepseek_render_messages_with_tool_calls() {
+    let backend = deepseek_backend_no_server();
+    let messages = vec![ChatMessage::assistant_tool_calls(vec![ChatToolCall {
+        id: "call_1".to_owned(),
+        kind: ToolType::Function,
+        function: FunctionCall {
+            name: "get_weather".to_owned(),
+            arguments: "{\"city\":\"Shanghai\"}".to_owned(),
+        },
+    }])];
+
+    let json = backend.render_messages(&messages).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+    assert_eq!(parsed[0]["role"], "assistant");
+    assert_eq!(parsed[0]["tool_calls"][0]["id"], "call_1");
+    assert_eq!(parsed[0]["tool_calls"][0]["type"], "function");
+    assert_eq!(
+        parsed[0]["tool_calls"][0]["function"]["name"],
+        "get_weather"
     );
+    assert_eq!(
+        parsed[0]["tool_calls"][0]["function"]["arguments"],
+        "{\"city\":\"Shanghai\"}"
+    );
+}
 
-    let prepared = backend
-        .prepare(ChatCompletionRequest::new(
-            "gpt-4.1-mini",
-            vec![ChatMessage::user("hello")],
-        ))
-        .unwrap()
-        .with_headers(headers);
+#[cfg(feature = "deepseek")]
+#[test]
+fn deepseek_render_messages_with_tool_result() {
+    let backend = deepseek_backend_no_server();
+    let messages = vec![ChatMessage::tool_result("{\"temperature\":26}", "call_1")];
 
-    assert_eq!(prepared.headers().len(), 1);
+    let json = backend.render_messages(&messages).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
 
-    let response = backend.send(&prepared).await.unwrap();
-    assert_eq!(response.first_choice_content(), Some("with headers"));
+    assert_eq!(parsed[0]["role"], "tool");
+    assert_eq!(parsed[0]["content"], "{\"temperature\":26}");
+    assert_eq!(parsed[0]["tool_call_id"], "call_1");
+}
+
+#[cfg(feature = "deepseek")]
+#[test]
+fn deepseek_render_tools_with_parameters() {
+    let backend = deepseek_backend_no_server();
+    let tools = vec![ToolDefinition {
+        kind: ToolType::Function,
+        function: FunctionDefinition {
+            name: "get_weather".to_owned(),
+            description: Some("Get current weather".to_owned()),
+            parameters: Some(json!({
+                "type": "object",
+                "properties": {
+                    "city": {"type": "string", "description": "City name"}
+                },
+                "required": ["city"]
+            })),
+            strict: None,
+        },
+    }];
+
+    let json = backend.render_tools(&tools).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+    assert_eq!(parsed[0]["function"]["parameters"]["type"], "object");
+    assert_eq!(parsed[0]["function"]["parameters"]["required"][0], "city");
+    assert!(parsed[0]["function"]["parameters"]["properties"]["city"].is_object());
+}
+
+#[cfg(feature = "deepseek")]
+#[test]
+fn deepseek_render_tools_empty_slice_returns_empty_array() {
+    let backend = deepseek_backend_no_server();
+    let json = backend.render_tools(&[]).unwrap();
+    assert_eq!(json, "[]");
 }
 
 #[cfg(feature = "openai-compat")]
-#[tokio::test]
-async fn prepared_requests_work_without_extra_headers() {
-    let server = MockServer::start().await;
+#[test]
+fn openai_compat_render_messages_with_tool_calls() {
+    let backend = openai_backend_no_server();
+    let messages = vec![ChatMessage::assistant_tool_calls(vec![ChatToolCall {
+        id: "call_1".to_owned(),
+        kind: ToolType::Function,
+        function: FunctionCall {
+            name: "get_weather".to_owned(),
+            arguments: "{\"city\":\"Shanghai\"}".to_owned(),
+        },
+    }])];
 
-    Mock::given(method("POST"))
-        .and(path("/chat/completions"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "id": "chatcmpl-nohdr",
-            "object": "chat.completion",
-            "created": 1,
-            "model": "gpt-4.1-mini",
-            "choices": [
-                {
-                    "index": 0,
-                    "finish_reason": "stop",
-                    "message": {
-                        "role": "assistant",
-                        "content": "no headers"
-                    }
-                }
-            ]
-        })))
-        .mount(&server)
-        .await;
+    let json = backend.render_messages(&messages).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
 
-    let backend = openai_backend(&server);
-    let prepared = backend
-        .prepare(ChatCompletionRequest::new(
-            "gpt-4.1-mini",
-            vec![ChatMessage::user("hello")],
-        ))
-        .unwrap();
+    assert_eq!(parsed[0]["role"], "assistant");
+    assert_eq!(parsed[0]["tool_calls"][0]["id"], "call_1");
+    assert_eq!(parsed[0]["tool_calls"][0]["type"], "function");
+    assert_eq!(
+        parsed[0]["tool_calls"][0]["function"]["name"],
+        "get_weather"
+    );
+    assert_eq!(
+        parsed[0]["tool_calls"][0]["function"]["arguments"],
+        "{\"city\":\"Shanghai\"}"
+    );
+}
 
-    assert_eq!(prepared.headers().len(), 0);
+#[cfg(feature = "openai-compat")]
+#[test]
+fn openai_compat_render_messages_with_tool_result() {
+    let backend = openai_backend_no_server();
+    let messages = vec![ChatMessage::tool_result("{\"temperature\":26}", "call_1")];
 
-    let response = backend.send(&prepared).await.unwrap();
-    assert_eq!(response.first_choice_content(), Some("no headers"));
+    let json = backend.render_messages(&messages).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+    assert_eq!(parsed[0]["role"], "tool");
+    assert_eq!(parsed[0]["content"], "{\"temperature\":26}");
+    assert_eq!(parsed[0]["tool_call_id"], "call_1");
+}
+
+#[cfg(feature = "openai-compat")]
+#[test]
+fn openai_compat_render_tools_with_parameters() {
+    let backend = openai_backend_no_server();
+    let tools = vec![ToolDefinition {
+        kind: ToolType::Function,
+        function: FunctionDefinition {
+            name: "get_weather".to_owned(),
+            description: Some("Get current weather".to_owned()),
+            parameters: Some(json!({
+                "type": "object",
+                "properties": {
+                    "city": {"type": "string", "description": "City name"}
+                },
+                "required": ["city"]
+            })),
+            strict: None,
+        },
+    }];
+
+    let json = backend.render_tools(&tools).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+    assert_eq!(parsed[0]["function"]["parameters"]["type"], "object");
+    assert_eq!(parsed[0]["function"]["parameters"]["required"][0], "city");
+    assert!(parsed[0]["function"]["parameters"]["properties"]["city"].is_object());
+}
+
+#[cfg(feature = "openai-compat")]
+#[test]
+fn openai_compat_render_tools_empty_slice_returns_empty_array() {
+    let backend = openai_backend_no_server();
+    let json = backend.render_tools(&[]).unwrap();
+    assert_eq!(json, "[]");
 }

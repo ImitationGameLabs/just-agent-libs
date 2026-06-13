@@ -50,7 +50,7 @@ impl ProviderEntry for DeepSeekProvider {
         }
         let client = builder
             .build()
-            .map_err(|source| LlmError::backend("deepseek", source))?;
-        Ok(Arc::new(DeepSeekBackend::new(client)))
+            .map_err(|e| LlmError::backend("deepseek", e))?;
+        Ok(Arc::new(DeepSeekBackend::from_client(client)))
     }
 }

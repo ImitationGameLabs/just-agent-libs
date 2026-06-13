@@ -1,9 +1,6 @@
 use crate::{
     LlmError,
-    types::{
-        chat::{ChatCompletionRequest, ToolChoice},
-        prepared::PreparedChatRequest,
-    },
+    types::chat::{ChatCompletionRequest, ToolChoice},
 };
 
 /// Validates that a request is suitable for a non-streaming endpoint.
@@ -44,36 +41,6 @@ pub fn into_validated_streaming_request(
 
     request.stream = Some(true);
     Ok(request)
-}
-
-/// Validates that a prepared request is suitable for a non-streaming endpoint.
-pub fn validate_prepared_non_streaming_request(
-    request: &PreparedChatRequest,
-    method_name: &'static str,
-    streaming_method_name: &'static str,
-) -> Result<(), LlmError> {
-    if request.has_stream() {
-        return Err(LlmError::invalid_request(format!(
-            "prepared request enables stream=true and cannot be sent via {method_name}; use {streaming_method_name} instead"
-        )));
-    }
-
-    Ok(())
-}
-
-/// Validates that a prepared request is suitable for a streaming endpoint.
-pub fn validate_prepared_streaming_request(
-    request: &PreparedChatRequest,
-    method_name: &'static str,
-    non_streaming_method_name: &'static str,
-) -> Result<(), LlmError> {
-    if !request.has_stream() {
-        return Err(LlmError::invalid_request(format!(
-            "prepared request does not enable stream=true and cannot be sent via {method_name}; use {non_streaming_method_name} instead"
-        )));
-    }
-
-    Ok(())
 }
 
 /// Validates request fields shared by streaming and non-streaming paths.
