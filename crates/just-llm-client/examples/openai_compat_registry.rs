@@ -26,7 +26,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
 
     println!("--- request 1 ---");
-    println!("  [provider] {}", client.provider_id());
+    println!("  [instance] {}", client.instance_id());
     println!("  [model] {}", client.model());
     println!("  [system] You are a concise assistant.");
     println!("  [user] {prompt}");

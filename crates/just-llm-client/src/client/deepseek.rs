@@ -35,12 +35,8 @@ impl DeepSeekProvider {
 }
 
 impl ProviderEntry for DeepSeekProvider {
-    fn id(&self) -> &str {
+    fn instance_id(&self) -> &str {
         &self.id
-    }
-
-    fn provider(&self) -> &str {
-        "deepseek"
     }
 
     fn connect(&self) -> Result<Arc<dyn LlmBackend>, LlmError> {

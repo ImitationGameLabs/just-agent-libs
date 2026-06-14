@@ -61,7 +61,7 @@ impl ChatClientOptions {
     }
 }
 
-/// Thin facade that pairs a provider entry id, default request values, and a shared backend.
+/// Thin facade that pairs an instance id, default request values, and a shared backend.
 ///
 /// Constructed via [`ProviderRegistry::chat`].
 /// Implements [`Deref`] to [`dyn LlmBackend`](crate::LlmBackend) so the direct and prepared chat
@@ -70,7 +70,7 @@ impl ChatClientOptions {
 /// [`DeepSeekBackend`](crate::provider::DeepSeekBackend).
 #[derive(Clone)]
 pub struct ChatClient {
-    provider_id: String,
+    instance_id: String,
     model: String,
     system_prompt: Option<String>,
     backend: Arc<dyn LlmBackend>,
@@ -78,21 +78,21 @@ pub struct ChatClient {
 
 impl ChatClient {
     pub(crate) fn new(
-        provider_id: String,
+        instance_id: String,
         options: ChatClientOptions,
         backend: Arc<dyn LlmBackend>,
     ) -> Self {
         Self {
-            provider_id,
+            instance_id,
             model: options.model,
             system_prompt: options.system_prompt,
             backend,
         }
     }
 
-    /// Returns the provider entry id used to create this client.
-    pub fn provider_id(&self) -> &str {
-        &self.provider_id
+    /// Returns the instance id used to create this client.
+    pub fn instance_id(&self) -> &str {
+        &self.instance_id
     }
 
     /// Returns the resolved model string (explicit or provider default).
@@ -145,10 +145,10 @@ impl Deref for ChatClient {
 impl std::fmt::Debug for ChatClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ChatClient")
-            .field("provider_id", &self.provider_id)
+            .field("instance_id", &self.instance_id)
             .field("model", &self.model)
             .field("has_system_prompt", &self.system_prompt.is_some())
-            .field("backend_id", &self.backend.backend_id())
+            .field("family", &self.backend.family())
             .finish()
     }
 }

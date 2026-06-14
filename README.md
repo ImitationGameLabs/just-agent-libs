@@ -40,7 +40,7 @@ just-agent-libs aims to support more model providers over time. But if your prov
 struct MyBackend { /* ... */ }
 
 impl Identifiable for MyBackend {
-    fn backend_id(&self) -> &'static str { "my-backend" }
+    fn family(&self) -> &'static str { "my-backend" }
 }
 
 impl CapabilityNegotiation for MyBackend {}

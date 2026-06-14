@@ -37,12 +37,8 @@ impl OpenAiCompatProvider {
 }
 
 impl ProviderEntry for OpenAiCompatProvider {
-    fn id(&self) -> &str {
+    fn instance_id(&self) -> &str {
         &self.id
-    }
-
-    fn provider(&self) -> &str {
-        "openai-compatible"
     }
 
     fn connect(&self) -> Result<Arc<dyn LlmBackend>, LlmError> {

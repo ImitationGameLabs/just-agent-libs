@@ -23,8 +23,8 @@ impl StoredProvider {
         }
     }
 
-    fn id(&self) -> &str {
-        self.provider.id()
+    fn instance_id(&self) -> &str {
+        self.provider.instance_id()
     }
 }
 
@@ -65,14 +65,14 @@ impl ProviderRegistry {
 
     /// Register (or replace) a configured provider entry.
     ///
-    /// If another provider with the same [`ProviderEntry::id`] already exists, it is replaced and
+    /// If another provider with the same [`ProviderEntry::instance_id`] already exists, it is replaced and
     /// any previously cached backend for that identifier is discarded.
     pub fn register(&mut self, provider: impl ProviderEntry) -> &mut Self {
         let stored = StoredProvider::new(provider);
         if let Some(existing_index) = self
             .providers
             .iter()
-            .position(|entry| entry.id() == stored.id())
+            .position(|entry| entry.instance_id() == stored.instance_id())
         {
             self.providers[existing_index] = stored;
         } else {
@@ -86,8 +86,8 @@ impl ProviderRegistry {
         let stored = self
             .providers
             .iter()
-            .find(|provider| provider.id() == id)
-            .ok_or_else(|| LlmError::invalid_request(format!("unknown provider id: {id}")))?;
+            .find(|provider| provider.instance_id() == id)
+            .ok_or_else(|| LlmError::invalid_request(format!("unknown instance id: {id}")))?;
         let backend = {
             let mut cached = stored.backend.lock().map_err(|_| {
                 LlmError::invalid_request(format!("provider backend cache poisoned: {id}"))
@@ -103,8 +103,8 @@ impl ProviderRegistry {
         Ok(ChatClient::new(id.to_owned(), options, backend))
     }
 
-    /// Returns the identifiers of all registered provider entries.
-    pub fn provider_ids(&self) -> impl Iterator<Item = &str> {
-        self.providers.iter().map(StoredProvider::id)
+    /// Returns the instance ids of all registered provider entries.
+    pub fn instance_ids(&self) -> impl Iterator<Item = &str> {
+        self.providers.iter().map(StoredProvider::instance_id)
     }
 }

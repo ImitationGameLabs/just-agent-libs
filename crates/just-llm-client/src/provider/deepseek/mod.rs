@@ -53,7 +53,7 @@ impl DeepSeekBackend {
 }
 
 impl Identifiable for DeepSeekBackend {
-    fn backend_id(&self) -> &'static str {
+    fn family(&self) -> &'static str {
         "deepseek"
     }
 }
@@ -77,7 +77,7 @@ impl LlmBackend for DeepSeekBackend {
         let provider_req: just_deepseek::types::chat::ChatCompletionRequest = request.into();
         self.client
             .prepare(provider_req)
-            .map_err(|e| LlmError::backend(self.backend_id(), e))
+            .map_err(|e| LlmError::backend(self.family(), e))
     }
 
     fn prepare_streaming(
@@ -88,14 +88,14 @@ impl LlmBackend for DeepSeekBackend {
         let provider_req: just_deepseek::types::chat::ChatCompletionRequest = request.into();
         self.client
             .prepare_streaming(provider_req)
-            .map_err(|e| LlmError::backend(self.backend_id(), e))
+            .map_err(|e| LlmError::backend(self.family(), e))
     }
 
     async fn send(&self, prepared: reqwest::Request) -> Result<reqwest::Response, LlmError> {
         self.client
             .send(prepared)
             .await
-            .map_err(|e| LlmError::backend(self.backend_id(), e))
+            .map_err(|e| LlmError::backend(self.family(), e))
     }
 
     // --- parse + rendering ---
@@ -106,7 +106,7 @@ impl LlmBackend for DeepSeekBackend {
             .client
             .parse(response)
             .await
-            .map_err(|e| LlmError::backend(self.backend_id(), e))?;
+            .map_err(|e| LlmError::backend(self.family(), e))?;
         Ok(native.into())
     }
 
@@ -119,7 +119,7 @@ impl LlmBackend for DeepSeekBackend {
             .client
             .parse_streaming(response)
             .await
-            .map_err(|e| LlmError::backend(self.backend_id(), e))?;
+            .map_err(|e| LlmError::backend(self.family(), e))?;
         let mapped = stream.map(|chunk| chunk.map(Into::into));
         Ok(ChatCompletionStream::new(Box::pin(mapped)))
     }
@@ -144,7 +144,7 @@ impl ModelCatalog for DeepSeekBackend {
             .client
             .list_models()
             .await
-            .map_err(|e| LlmError::backend(self.backend_id(), e))?;
+            .map_err(|e| LlmError::backend(self.family(), e))?;
 
         Ok(ModelCatalogResponse {
             data: models
@@ -167,7 +167,7 @@ impl Balance for DeepSeekBackend {
             .client
             .get_user_balance()
             .await
-            .map_err(|e| LlmError::backend(self.backend_id(), e))?;
+            .map_err(|e| LlmError::backend(self.family(), e))?;
 
         Ok(BalanceSnapshot {
             is_available: balance.is_available,

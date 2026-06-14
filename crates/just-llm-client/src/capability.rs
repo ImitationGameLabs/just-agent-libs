@@ -56,9 +56,12 @@ impl Stream for ChatCompletionStream {
 }
 
 /// Root identity trait shared by all client capabilities.
+///
+/// Every backend is identified by its [`family`](Self::family) — the stable string
+/// ("deepseek", "openai-compatible") used for error attribution and diagnostics.
 pub trait Identifiable: Send + Sync {
-    /// Returns the stable backend identifier used in error attribution.
-    fn backend_id(&self) -> &'static str;
+    /// Returns the backend family used to identify and attribute this backend in errors.
+    fn family(&self) -> &'static str;
 }
 
 /// List available models from the provider.
@@ -84,16 +87,13 @@ pub trait CapabilityNegotiation: Identifiable {
     /// Returns a handle for model catalog inspection when the backend supports it.
     fn model_catalog(&self) -> Result<&dyn ModelCatalog, LlmError> {
         Err(LlmError::unsupported(
-            self.backend_id(),
+            self.family(),
             Capability::ModelCatalog,
         ))
     }
 
     /// Returns a handle for balance inspection when the backend supports it.
     fn balance(&self) -> Result<&dyn Balance, LlmError> {
-        Err(LlmError::unsupported(
-            self.backend_id(),
-            Capability::Balance,
-        ))
+        Err(LlmError::unsupported(self.family(), Capability::Balance))
     }
 }

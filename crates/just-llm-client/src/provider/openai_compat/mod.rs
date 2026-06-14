@@ -53,7 +53,7 @@ impl OpenAiCompatBackend {
 }
 
 impl Identifiable for OpenAiCompatBackend {
-    fn backend_id(&self) -> &'static str {
+    fn family(&self) -> &'static str {
         "openai-compatible"
     }
 }
@@ -73,7 +73,7 @@ impl LlmBackend for OpenAiCompatBackend {
         let provider_req: just_openai_compat::types::chat::ChatCompletionRequest = request.into();
         self.client
             .prepare(provider_req)
-            .map_err(|e| LlmError::backend(self.backend_id(), e))
+            .map_err(|e| LlmError::backend(self.family(), e))
     }
 
     fn prepare_streaming(
@@ -84,14 +84,14 @@ impl LlmBackend for OpenAiCompatBackend {
         let provider_req: just_openai_compat::types::chat::ChatCompletionRequest = request.into();
         self.client
             .prepare_streaming(provider_req)
-            .map_err(|e| LlmError::backend(self.backend_id(), e))
+            .map_err(|e| LlmError::backend(self.family(), e))
     }
 
     async fn send(&self, prepared: reqwest::Request) -> Result<reqwest::Response, LlmError> {
         self.client
             .send(prepared)
             .await
-            .map_err(|e| LlmError::backend(self.backend_id(), e))
+            .map_err(|e| LlmError::backend(self.family(), e))
     }
 
     // --- parse + rendering ---
@@ -102,7 +102,7 @@ impl LlmBackend for OpenAiCompatBackend {
             .client
             .parse(response)
             .await
-            .map_err(|e| LlmError::backend(self.backend_id(), e))?;
+            .map_err(|e| LlmError::backend(self.family(), e))?;
         Ok(native.into())
     }
 
@@ -115,7 +115,7 @@ impl LlmBackend for OpenAiCompatBackend {
             .client
             .parse_streaming(response)
             .await
-            .map_err(|e| LlmError::backend(self.backend_id(), e))?;
+            .map_err(|e| LlmError::backend(self.family(), e))?;
         let mapped = stream.map(|chunk| chunk.map(Into::into));
         Ok(ChatCompletionStream::new(Box::pin(mapped)))
     }
@@ -140,7 +140,7 @@ impl ModelCatalog for OpenAiCompatBackend {
             .client
             .list_models()
             .await
-            .map_err(|e| LlmError::backend(self.backend_id(), e))?;
+            .map_err(|e| LlmError::backend(self.family(), e))?;
 
         Ok(ModelCatalogResponse {
             data: models

@@ -18,7 +18,7 @@ use just_llm_client::{
 
 struct TestProvider {
     id: String,
-    provider: &'static str,
+    family: &'static str,
     connect_count: Arc<AtomicUsize>,
 }
 
@@ -26,38 +26,34 @@ impl TestProvider {
     fn new(id: impl Into<String>, connect_count: Arc<AtomicUsize>) -> Self {
         Self {
             id: id.into(),
-            provider: "test-provider",
+            family: "test-provider",
             connect_count,
         }
     }
 }
 
 impl ProviderEntry for TestProvider {
-    fn id(&self) -> &str {
+    fn instance_id(&self) -> &str {
         &self.id
-    }
-
-    fn provider(&self) -> &str {
-        self.provider
     }
 
     fn connect(&self) -> Result<Arc<dyn LlmBackend>, LlmError> {
         self.connect_count.fetch_add(1, Ordering::SeqCst);
         Ok(Arc::new(TestBackend {
-            backend_id: self.provider,
+            family: self.family,
             http: reqwest::Client::new(),
         }))
     }
 }
 
 struct TestBackend {
-    backend_id: &'static str,
+    family: &'static str,
     http: reqwest::Client,
 }
 
 impl just_llm_client::Identifiable for TestBackend {
-    fn backend_id(&self) -> &'static str {
-        self.backend_id
+    fn family(&self) -> &'static str {
+        self.family
     }
 }
 
@@ -78,7 +74,7 @@ impl LlmBackend for TestBackend {
             .build()
             .map_err(|e| {
                 LlmError::backend(
-                    self.backend_id,
+                    self.family,
                     just_common::error::TransportError::Transport(e),
                 )
             })
@@ -173,7 +169,7 @@ fn chat_client_request_injects_model_and_system_prompt() {
         .unwrap();
     let request = client.create_request(vec![ChatMessage::user("hello")]);
 
-    assert_eq!(client.provider_id(), "alpha");
+    assert_eq!(client.instance_id(), "alpha");
     assert_eq!(client.model(), "test-model");
     assert_eq!(client.system_prompt(), Some("Be concise."));
     assert_eq!(request.model, "test-model");
@@ -198,8 +194,8 @@ fn provider_registry_reuses_connected_backend() {
         .unwrap();
 
     assert_eq!(connect_count.load(Ordering::SeqCst), 1);
-    assert_eq!(first.provider_id(), "alpha");
-    assert_eq!(second.provider_id(), "alpha");
+    assert_eq!(first.instance_id(), "alpha");
+    assert_eq!(second.instance_id(), "alpha");
     assert_eq!(first.model(), "model-a");
     assert_eq!(second.model(), "model-b");
 }
@@ -216,13 +212,13 @@ fn provider_registry_replaces_existing_provider_with_same_id() {
         .chat("alpha", ChatClientOptions::new("model"))
         .unwrap();
 
-    assert_eq!(client.provider_id(), "alpha");
+    assert_eq!(client.instance_id(), "alpha");
     assert_eq!(first_count.load(Ordering::SeqCst), 0);
     assert_eq!(second_count.load(Ordering::SeqCst), 1);
 }
 
 #[test]
-fn provider_registry_rejects_unknown_provider_id() {
+fn provider_registry_rejects_unknown_instance_id() {
     let registry = ProviderRegistry::new();
     let error = registry
         .chat("missing", ChatClientOptions::new("model"))
@@ -231,6 +227,6 @@ fn provider_registry_rejects_unknown_provider_id() {
     assert!(matches!(error, LlmError::InvalidRequest(_)));
     assert_eq!(
         error.to_string(),
-        "invalid request: unknown provider id: missing"
+        "invalid request: unknown instance id: missing"
     );
 }
