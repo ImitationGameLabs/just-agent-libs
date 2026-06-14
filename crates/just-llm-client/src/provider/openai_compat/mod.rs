@@ -36,6 +36,10 @@ pub struct OpenAiCompatBackend {
 }
 
 impl OpenAiCompatBackend {
+    /// The backend family string — the single source shared with
+    /// [`OpenAiCompatProvider`](crate::OpenAiCompatProvider) for connect-time error attribution.
+    pub(crate) const FAMILY: &'static str = "openai-compatible";
+
     /// Creates a new backend from a pre-built provider client.
     pub fn from_client(client: just_openai_compat::OpenAiCompatClient) -> Self {
         Self { client }
@@ -54,7 +58,7 @@ impl OpenAiCompatBackend {
 
 impl Identifiable for OpenAiCompatBackend {
     fn family(&self) -> &'static str {
-        "openai-compatible"
+        Self::FAMILY
     }
 }
 

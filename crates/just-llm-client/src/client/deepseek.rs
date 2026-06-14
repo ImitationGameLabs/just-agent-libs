@@ -39,6 +39,10 @@ impl ProviderEntry for DeepSeekProvider {
         &self.id
     }
 
+    fn family(&self) -> &'static str {
+        DeepSeekBackend::FAMILY
+    }
+
     fn connect(&self) -> Result<Arc<dyn LlmBackend>, LlmError> {
         let mut builder = just_deepseek::DeepSeekClient::builder().api_key(&self.api_key);
         if let Some(url) = &self.base_url {
@@ -46,7 +50,7 @@ impl ProviderEntry for DeepSeekProvider {
         }
         let client = builder
             .build()
-            .map_err(|e| LlmError::backend("deepseek", e))?;
+            .map_err(|e| LlmError::backend(self.family(), e))?;
         Ok(Arc::new(DeepSeekBackend::from_client(client)))
     }
 }

@@ -36,6 +36,10 @@ pub struct DeepSeekBackend {
 }
 
 impl DeepSeekBackend {
+    /// The backend family string — the single source shared with
+    /// [`DeepSeekProvider`](crate::DeepSeekProvider) for connect-time error attribution.
+    pub(crate) const FAMILY: &'static str = "deepseek";
+
     /// Creates a new backend from a pre-built provider client.
     pub fn from_client(client: just_deepseek::DeepSeekClient) -> Self {
         Self { client }
@@ -54,7 +58,7 @@ impl DeepSeekBackend {
 
 impl Identifiable for DeepSeekBackend {
     fn family(&self) -> &'static str {
-        "deepseek"
+        Self::FAMILY
     }
 }
 

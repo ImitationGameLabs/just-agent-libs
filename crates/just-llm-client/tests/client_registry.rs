@@ -37,6 +37,10 @@ impl ProviderEntry for TestProvider {
         &self.id
     }
 
+    fn family(&self) -> &'static str {
+        self.family
+    }
+
     fn connect(&self) -> Result<Arc<dyn LlmBackend>, LlmError> {
         self.connect_count.fetch_add(1, Ordering::SeqCst);
         Ok(Arc::new(TestBackend {

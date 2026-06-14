@@ -41,12 +41,16 @@ impl ProviderEntry for OpenAiCompatProvider {
         &self.id
     }
 
+    fn family(&self) -> &'static str {
+        OpenAiCompatBackend::FAMILY
+    }
+
     fn connect(&self) -> Result<Arc<dyn LlmBackend>, LlmError> {
         let client = just_openai_compat::OpenAiCompatClient::builder()
             .api_key(&self.api_key)
             .base_url(&self.base_url)
             .build()
-            .map_err(|e| LlmError::backend("openai-compatible", e))?;
+            .map_err(|e| LlmError::backend(self.family(), e))?;
         Ok(Arc::new(OpenAiCompatBackend::from_client(client)))
     }
 }
