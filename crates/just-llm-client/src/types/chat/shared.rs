@@ -19,6 +19,7 @@ pub enum ResponseFormatType {
 
 /// Stop sequence configuration.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[non_exhaustive]
 #[serde(untagged)]
 pub enum StopSequence {
     Single(String),
@@ -68,6 +69,7 @@ pub struct NamedToolChoiceFunction {
 
 /// Tool choice configuration.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[non_exhaustive]
 #[serde(untagged)]
 pub enum ToolChoice {
     Mode(ToolChoiceMode),

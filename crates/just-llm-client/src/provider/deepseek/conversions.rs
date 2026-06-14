@@ -247,6 +247,12 @@ impl From<provider_chat::FunctionCallDelta> for client_chat::FunctionCallDelta {
     }
 }
 
+// NOTE: exhaustive by design — no `_ =>` fallback. The source
+// `provider_chat::FinishReason` is not `#[non_exhaustive]`, so the compiler
+// proves exhaustiveness and any new provider variant becomes a compile error
+// forcing a deliberate mapping here. (The client→provider conversions above use
+// `_ =>` arms only because their source — the client enum — IS
+// `#[non_exhaustive]`. Different direction, different requirement.)
 impl From<provider_chat::FinishReason> for client_chat::FinishReason {
     fn from(reason: provider_chat::FinishReason) -> Self {
         match reason {
