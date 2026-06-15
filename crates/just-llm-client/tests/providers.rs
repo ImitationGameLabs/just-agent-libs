@@ -379,7 +379,7 @@ async fn parse_surfaces_deserialize_error_for_malformed_body() {
         .unwrap();
     let response = backend.send(prepared).await.unwrap();
 
-    // A 2xx body that fails to deserialize surfaces as Backend(ProviderError::Deserialize).
+    // A 2xx body that fails to deserialize surfaces as BackendError::Provider { .. }.
     let error = backend.parse(response).await.unwrap_err();
     let BackendError::Provider { source, .. } = error else {
         panic!("expected BackendError::Provider");
