@@ -67,17 +67,16 @@ giving callers full access to the HTTP response (including headers) before deser
 
 ```rust
 use just_llm_client::{
-    build_client,
     LlmBackend,
     provider::OpenAiCompatBackend,
     types::chat::{ChatCompletionRequest, ChatMessage},
 };
 
-let http = build_client(
+let backend = OpenAiCompatBackend::new(
     reqwest::Client::builder().use_rustls_tls(),
     "your-api-key",
+    Some("https://your-compatible-endpoint/v1"),
 )?;
-let backend = OpenAiCompatBackend::new(http, "https://your-compatible-endpoint/v1".to_owned());
 
 let builder = backend.prepare(
     ChatCompletionRequest::new(

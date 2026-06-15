@@ -6,10 +6,13 @@
 //! [`UnsupportedCapability`](crate::LlmError::UnsupportedCapability) because the generic
 //! OpenAI-compatible API does not expose a balance endpoint.
 //!
-//! Construct via [`OpenAiCompatBackend::from_client`] with a pre-built provider client, or let
+//! Construct via [`OpenAiCompatBackend::new`] from raw inputs (API key + base URL), via
+//! [`OpenAiCompatBackend::from_provider_client`] with a pre-built provider client, or let
 //! [`OpenAiCompatProvider`](crate::OpenAiCompatProvider) build one through the registry.
 
 mod conversions;
+
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use futures_util::StreamExt;
@@ -40,19 +43,37 @@ impl OpenAiCompatBackend {
     /// [`OpenAiCompatProvider`](crate::OpenAiCompatProvider) for connect-time error attribution.
     pub(crate) const FAMILY: &'static str = "openai-compatible";
 
-    /// Creates a new backend from a pre-built provider client.
-    pub fn from_client(client: just_openai_compat::OpenAiCompatClient) -> Self {
-        Self { client }
+    /// Primary constructor: build a shared OpenAI-compatible backend from raw inputs.
+    ///
+    /// The Bearer auth header is configured from the API key and injected when the underlying
+    /// client is built (via [`build_client`](just_common::transport::http::build_client), inside
+    /// the SDK builder). Unlike DeepSeek, this provider has no default base URL — `base_url =
+    /// None` surfaces as [`LlmError::Backend`](crate::LlmError::Backend) carrying a
+    /// `TransportError::InvalidConfig("base url is required")` source. Returns the shared trait
+    /// object that the registry and [`ChatClient`](crate::ChatClient) consume.
+    // Intentional: yields the shared `Arc<dyn LlmBackend>` that the registry and `ChatClient`
+    // consume, rather than a concrete `Self`.
+    #[allow(clippy::new_ret_no_self)]
+    pub fn new(
+        http: reqwest::ClientBuilder,
+        api_key: &str,
+        base_url: Option<&str>,
+    ) -> Result<Arc<dyn LlmBackend>, LlmError> {
+        let mut builder = just_openai_compat::OpenAiCompatClient::builder()
+            .api_key(api_key)
+            .http_client(http);
+        if let Some(url) = base_url {
+            builder = builder.base_url(url);
+        }
+        let client = builder
+            .build()
+            .map_err(|e| LlmError::backend(Self::FAMILY, e))?;
+        Ok(Arc::new(OpenAiCompatBackend::from_provider_client(client)))
     }
 
-    /// Creates a new backend from raw HTTP components.
-    ///
-    /// The HTTP client should already have auth headers set (e.g. via
-    /// [`build_client`](just_common::transport::http::build_client)).
-    pub fn new(http: reqwest::Client, base_url: String) -> Self {
-        Self {
-            client: just_openai_compat::OpenAiCompatClient::new(http, base_url),
-        }
+    /// Creates a new backend from a pre-built provider client.
+    pub fn from_provider_client(client: just_openai_compat::OpenAiCompatClient) -> Self {
+        Self { client }
     }
 }
 

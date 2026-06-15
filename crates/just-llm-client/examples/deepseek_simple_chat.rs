@@ -1,8 +1,6 @@
 mod common;
 
-use just_llm_client::build_client;
 use just_llm_client::{
-    LlmBackend,
     provider::DeepSeekBackend,
     types::chat::{ChatCompletionRequest, ChatMessage},
 };
@@ -12,18 +10,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().expect("failed to load .env file");
 
     let api_key = common::expect_env("JUST_LLM_DEEPSEEK_API_KEY");
-    let base_url = std::env::var("JUST_LLM_DEEPSEEK_BASE_URL")
-        .unwrap_or_else(|_| "https://api.deepseek.com".to_owned());
+    let base_url = std::env::var("JUST_LLM_DEEPSEEK_BASE_URL").ok();
     let model = common::expect_env("JUST_LLM_DEEPSEEK_MODEL");
     let prompt = "Say hello in one sentence.";
 
-    let http = build_client(
+    let backend = DeepSeekBackend::new(
         reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(60))
             .use_rustls_tls(),
         &api_key,
+        base_url.as_deref(),
     )?;
-    let backend = DeepSeekBackend::new(http, base_url);
 
     println!("--- request 1 ---");
     println!("  [system] You are a concise assistant.");

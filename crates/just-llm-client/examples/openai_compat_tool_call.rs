@@ -1,8 +1,6 @@
 mod common;
 
-use just_llm_client::build_client;
 use just_llm_client::{
-    LlmBackend,
     provider::OpenAiCompatBackend,
     types::chat::{
         ChatCompletionRequest, ChatMessage, FunctionDefinition, ToolDefinition, ToolType,
@@ -17,13 +15,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let base_url = common::expect_env("JUST_LLM_OPENAI_COMPAT_BASE_URL");
     let model = common::expect_env("JUST_LLM_OPENAI_COMPAT_MODEL");
 
-    let http = build_client(
+    let backend = OpenAiCompatBackend::new(
         reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(60))
             .use_rustls_tls(),
         &api_key,
+        Some(base_url.as_str()),
     )?;
-    let backend = OpenAiCompatBackend::new(http, base_url);
 
     let tools = vec![ToolDefinition {
         kind: ToolType::Function,

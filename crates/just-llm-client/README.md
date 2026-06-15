@@ -13,7 +13,6 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 ```rust,no_run
 use just_llm_client::{
-    build_client,
     LlmBackend,
     provider::DeepSeekBackend,
     types::chat::{ChatCompletionRequest, ChatMessage},
@@ -21,11 +20,11 @@ use just_llm_client::{
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let http = build_client(
+    let backend = DeepSeekBackend::new(
         reqwest::Client::builder().use_rustls_tls(),
         "your-api-key",
+        None,
     )?;
-    let backend = DeepSeekBackend::new(http, "https://api.deepseek.com".to_owned());
 
     let response = backend
         .chat_completion(

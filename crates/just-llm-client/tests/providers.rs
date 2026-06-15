@@ -3,8 +3,6 @@ use just_llm_client::error::Capability;
 
 #[cfg(feature = "openai-compat")]
 use futures_util::StreamExt;
-#[cfg(any(feature = "deepseek", feature = "openai-compat"))]
-use just_llm_client::CapabilityNegotiation;
 #[cfg(feature = "deepseek")]
 use just_llm_client::provider::DeepSeekBackend;
 #[cfg(feature = "openai-compat")]
@@ -27,32 +25,49 @@ use wiremock::{
     matchers::{method, path},
 };
 
+#[cfg(any(feature = "deepseek", feature = "openai-compat"))]
+use std::sync::Arc;
+
 #[cfg(feature = "deepseek")]
-fn deepseek_backend(server: &MockServer) -> DeepSeekBackend {
-    let builder = reqwest::Client::builder().use_rustls_tls();
-    let http = just_common::transport::http::build_client(builder, "test-key").unwrap();
-    DeepSeekBackend::new(http, server.uri())
+fn deepseek_backend(server: &MockServer) -> Arc<dyn LlmBackend> {
+    let uri = server.uri();
+    DeepSeekBackend::new(
+        reqwest::Client::builder().use_rustls_tls(),
+        "test-key",
+        Some(&uri),
+    )
+    .expect("failed to build deepseek backend")
 }
 
 #[cfg(feature = "deepseek")]
-fn deepseek_backend_no_server() -> DeepSeekBackend {
-    let builder = reqwest::Client::builder().use_rustls_tls();
-    let http = just_common::transport::http::build_client(builder, "test-key").unwrap();
-    DeepSeekBackend::new(http, "http://127.0.0.1:0".to_owned())
+fn deepseek_backend_no_server() -> Arc<dyn LlmBackend> {
+    DeepSeekBackend::new(
+        reqwest::Client::builder().use_rustls_tls(),
+        "test-key",
+        Some("http://127.0.0.1:0"),
+    )
+    .expect("failed to build deepseek backend")
 }
 
 #[cfg(feature = "openai-compat")]
-fn openai_backend(server: &MockServer) -> OpenAiCompatBackend {
-    let builder = reqwest::Client::builder().use_rustls_tls();
-    let http = just_common::transport::http::build_client(builder, "test-key").unwrap();
-    OpenAiCompatBackend::new(http, server.uri())
+fn openai_backend(server: &MockServer) -> Arc<dyn LlmBackend> {
+    let uri = server.uri();
+    OpenAiCompatBackend::new(
+        reqwest::Client::builder().use_rustls_tls(),
+        "test-key",
+        Some(&uri),
+    )
+    .expect("failed to build openai backend")
 }
 
 #[cfg(feature = "openai-compat")]
-fn openai_backend_no_server() -> OpenAiCompatBackend {
-    let builder = reqwest::Client::builder().use_rustls_tls();
-    let http = just_common::transport::http::build_client(builder, "test-key").unwrap();
-    OpenAiCompatBackend::new(http, "http://127.0.0.1:0".to_owned())
+fn openai_backend_no_server() -> Arc<dyn LlmBackend> {
+    OpenAiCompatBackend::new(
+        reqwest::Client::builder().use_rustls_tls(),
+        "test-key",
+        Some("http://127.0.0.1:0"),
+    )
+    .expect("failed to build openai backend")
 }
 
 // --- DeepSeek tests ---

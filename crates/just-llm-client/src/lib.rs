@@ -8,7 +8,8 @@
 //! - **Backend adapters** ([`crate::provider::DeepSeekBackend`], [`crate::provider::OpenAiCompatBackend`]): fully-constructed
 //!   LLM adapters that hold a `reqwest::Client` and base URL directly, expose always-on operations,
 //!   and negotiate optional capabilities such as model catalogs or balance inspection. Construct these
-//!   directly when you know which provider you want at compile time.
+//!   directly via [`new`](crate::provider::DeepSeekBackend::new) when you know which provider you
+//!   want at compile time.
 //!
 //! - **Programmatic provider entries** ([`DeepSeekProvider`], [`OpenAiCompatProvider`]): hold
 //!   application-supplied provider configuration (entry id, API key, base URL) and produce a

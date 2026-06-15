@@ -5,7 +5,9 @@
 //! construct the concrete backend directly via
 //! [`DeepSeekBackend`](crate::provider::DeepSeekBackend) or
 //! [`OpenAiCompatBackend`](crate::provider::OpenAiCompatBackend), passing a
-//! `reqwest::Client` and base URL to [`new`](crate::provider::DeepSeekBackend::new).
+//! `reqwest::ClientBuilder`, API key, and base URL (optional for DeepSeek, required for
+//! OpenAI-compatible) to
+//! [`new`](crate::provider::DeepSeekBackend::new).
 
 #[cfg(feature = "deepseek")]
 mod deepseek;

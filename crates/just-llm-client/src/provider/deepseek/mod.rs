@@ -3,10 +3,13 @@
 //! [`DeepSeekBackend`] wraps a [`just_deepseek::DeepSeekClient`] and implements [`LlmBackend`]
 //! so it can be used through [`dyn LlmBackend`](crate::LlmBackend) or directly.
 //!
-//! Construct via [`DeepSeekBackend::from_client`] with a pre-built provider client, or let
+//! Construct via [`DeepSeekBackend::new`] from raw inputs (API key + optional base URL), via
+//! [`DeepSeekBackend::from_provider_client`] with a pre-built provider client, or let
 //! [`DeepSeekProvider`](crate::DeepSeekProvider) build one through the registry.
 
 mod conversions;
+
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use futures_util::StreamExt;
@@ -40,19 +43,36 @@ impl DeepSeekBackend {
     /// [`DeepSeekProvider`](crate::DeepSeekProvider) for connect-time error attribution.
     pub(crate) const FAMILY: &'static str = "deepseek";
 
-    /// Creates a new backend from a pre-built provider client.
-    pub fn from_client(client: just_deepseek::DeepSeekClient) -> Self {
-        Self { client }
+    /// Primary constructor: build a shared DeepSeek backend from raw inputs.
+    ///
+    /// The Bearer auth header is configured from the API key and injected when the underlying
+    /// client is built (via [`build_client`](just_common::transport::http::build_client), inside
+    /// the SDK builder). `base_url = None` uses the provider default (`https://api.deepseek.com`).
+    /// Returns the shared trait object that the registry and [`ChatClient`](crate::ChatClient)
+    /// consume.
+    // Intentional: yields the shared `Arc<dyn LlmBackend>` that the registry and `ChatClient`
+    // consume, rather than a concrete `Self`.
+    #[allow(clippy::new_ret_no_self)]
+    pub fn new(
+        http: reqwest::ClientBuilder,
+        api_key: &str,
+        base_url: Option<&str>,
+    ) -> Result<Arc<dyn LlmBackend>, LlmError> {
+        let mut builder = just_deepseek::DeepSeekClient::builder()
+            .api_key(api_key)
+            .http_client(http);
+        if let Some(url) = base_url {
+            builder = builder.base_url(url);
+        }
+        let client = builder
+            .build()
+            .map_err(|e| LlmError::backend(Self::FAMILY, e))?;
+        Ok(Arc::new(DeepSeekBackend::from_provider_client(client)))
     }
 
-    /// Creates a new backend from raw HTTP components.
-    ///
-    /// The HTTP client should already have auth headers set (e.g. via
-    /// [`build_client`](just_common::transport::http::build_client)).
-    pub fn new(http: reqwest::Client, base_url: String) -> Self {
-        Self {
-            client: just_deepseek::DeepSeekClient::new(http, base_url),
-        }
+    /// Creates a new backend from a pre-built provider client.
+    pub fn from_provider_client(client: just_deepseek::DeepSeekClient) -> Self {
+        Self { client }
     }
 }
 

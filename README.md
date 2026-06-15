@@ -14,16 +14,15 @@ A lightweight, provider-neutral abstraction that sits on top of the provider typ
 
 ```rust
 use just_llm_client::{
-    build_client,
     provider::{DeepSeekBackend, LlmBackend},
     types::chat::{ChatCompletionRequest, ChatMessage},
 };
 
-let http = build_client(
+let backend = DeepSeekBackend::new(
     reqwest::Client::builder().use_rustls_tls(),
     "your-api-key",
+    None, // base_url = None uses the provider default
 )?;
-let backend = DeepSeekBackend::new(http, "https://api.deepseek.com".to_owned());
 let response = backend.chat_completion(
     ChatCompletionRequest::new(
         "deepseek-v4-flash",

@@ -51,6 +51,6 @@ impl ProviderEntry for OpenAiCompatProvider {
             .base_url(&self.base_url)
             .build()
             .map_err(|e| LlmError::backend(self.family(), e))?;
-        Ok(Arc::new(OpenAiCompatBackend::from_client(client)))
+        Ok(Arc::new(OpenAiCompatBackend::from_provider_client(client)))
     }
 }

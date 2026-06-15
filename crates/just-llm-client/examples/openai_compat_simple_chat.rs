@@ -1,8 +1,6 @@
 mod common;
 
-use just_llm_client::build_client;
 use just_llm_client::{
-    LlmBackend,
     provider::OpenAiCompatBackend,
     types::chat::{ChatCompletionRequest, ChatMessage},
 };
@@ -16,13 +14,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let model = common::expect_env("JUST_LLM_OPENAI_COMPAT_MODEL");
     let prompt = "Say hello in one sentence.";
 
-    let http = build_client(
+    let backend = OpenAiCompatBackend::new(
         reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(60))
             .use_rustls_tls(),
         &api_key,
+        Some(base_url.as_str()),
     )?;
-    let backend = OpenAiCompatBackend::new(http, base_url);
 
     println!("--- request 1 ---");
     println!("  [system] You are a concise assistant.");
