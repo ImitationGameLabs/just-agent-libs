@@ -10,7 +10,7 @@ The workspace intentionally keeps three adjacent but different entry points:
 | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
 | Provider type crate (`just-deepseek`, `just-openai-compat`)            | You want direct access to provider wire DTOs and do not need a shared abstraction                 | Serde-serializable request/response types                    |
 | Direct backend construction (`DeepSeekBackend`, `OpenAiCompatBackend`) | You know the provider family in code but still want `just-llm-client` normalized types and traits | Lowest-noise path into the `just-llm-client` layer           |
-| `ProviderRegistry`                                                     | You want to register a few configured provider entries and request `ChatClient`s by id at runtime | A shared-backend `ChatClient` surface with per-call defaults |
+| `BackendFactory`                                                      | You want to dispatch a family string to a backend constructor at runtime                          | A shared backend built from `(family, http, key, base_url)`  |
 
 The direct backend path still belongs to the `just-llm-client` layer. It is "concrete backend, normalized
 types", not "provider wire DTOs without the client layer".
@@ -40,12 +40,12 @@ repeated cross-crate edits rather than just visually similar definitions.
 The workspace supports two complementary initialization styles:
 
 1. **Direct backend construction** for the clearest, least abstract setup when you already know the provider family.
-2. **`ProviderRegistry` runtime selection** when your application builds a few configured provider entries and chooses among them by id.
+2. **`BackendFactory` runtime dispatch** when your application selects a provider by family string at runtime.
 
 | Style                       | Best when                                                                                                         | Tradeoff                                                                                                                 |
 | --------------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
 | Direct backend construction | You already know the provider family in code and want the shortest path from config to normalized client requests | You write separate setup code per provider family                                                                        |
-| `ProviderRegistry`          | Provider choice is configuration-driven and you want one runtime-selected entry point                             | You register configured providers programmatically, then derive `ChatClient`s with explicit model/system-prompt defaults |
+| `BackendFactory`            | Provider choice is configuration-driven and you want runtime dispatch from a family string                        | You construct a backend from `(family, http, key, base_url)`, then wrap it in a `ChatClient` with explicit model/system-prompt defaults |
 
 Example environment:
 
@@ -54,7 +54,7 @@ Example environment:
 JUST_LLM_DEEPSEEK_API_KEY=your-deepseek-api-key
 JUST_LLM_DEEPSEEK_MODEL=deepseek-v4-flash
 
-# Registry path
+# Factory path
 JUST_LLM_PROVIDER=deepseek
 JUST_LLM_MODEL=deepseek-v4-flash
 JUST_LLM_DEEPSEEK_API_KEY=your-deepseek-api-key

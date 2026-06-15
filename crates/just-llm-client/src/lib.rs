@@ -3,23 +3,24 @@
 //!
 //! # Architecture
 //!
-//! Two layers work together:
+//! Two building blocks on top of the provider type crates:
 //!
-//! - **Backend adapters** ([`crate::provider::DeepSeekBackend`], [`crate::provider::OpenAiCompatBackend`]): fully-constructed
-//!   LLM adapters that hold a `reqwest::Client` and base URL directly, expose always-on operations,
-//!   and negotiate optional capabilities such as model catalogs or balance inspection. Construct these
-//!   directly via [`new`](crate::provider::DeepSeekBackend::new) when you know which provider you
-//!   want at compile time.
+//! - **Backend adapters** ([`crate::provider::DeepSeekBackend`], [`crate::provider::OpenAiCompatBackend`]):
+//!   fully-constructed LLM adapters that hold a `reqwest::Client` and base URL directly, expose
+//!   always-on operations, and negotiate optional capabilities such as model catalogs or balance
+//!   inspection. Every backend implements [`LlmBackend`], which also carries the uniform
+//!   [`new`](LlmBackend::new) constructor and [`family`](LlmBackend::family) identifier used for
+//!   construction and error attribution.
 //!
-//! - **Programmatic provider entries** ([`DeepSeekProvider`], [`OpenAiCompatProvider`]): hold
-//!   application-supplied provider configuration (entry id, API key, base URL) and produce a
-//!   shared backend on demand via [`ProviderEntry::connect`]. Used by [`crate::ProviderRegistry`] to
-//!   lazily create [`ChatClient`] values with per-call defaults such as model and system prompt.
+//! - **[`BackendFactory`]**: a composable `family -> constructor` dispatch table. It maps a
+//!   backend family string (see the [`family`] module) to that backend's
+//!   [`LlmBackend::new`], building a fresh shared backend on each
+//!   [`create`](BackendFactory::create). It holds no configuration and caches nothing — downstream
+//!   composes any registry or sharing policy on top.
 //!
-//! The split is required because the registry stores configured provider entries, but LLM
-//! operations go through shared [`crate::LlmBackend`] trait objects. [`ProviderEntry::connect`]
-//! materializes the shared backend the first time a registry entry is used, and later
-//! [`ChatClient`] values reuse that backend while carrying their own request defaults.
+//! [`ChatClient`] pairs per-call defaults (model, system prompt) with a shared [`LlmBackend`] and
+//! derefs to `dyn LlmBackend`, so chat and capability methods are reachable directly. Construct a
+//! backend via [`BackendFactory`] or [`LlmBackend::new`], then wrap it in a [`ChatClient`].
 //!
 //! # Prepare-send-parse pattern
 //!
@@ -58,10 +59,12 @@
 
 /// Capability traits exposed by the LLM client layer.
 pub mod capability;
-/// Unified chat client and programmatic provider registry.
+/// Unified chat client and backend factory.
 pub mod client;
 /// LLM client error taxonomy.
 pub mod error;
+/// Built-in backend family identifiers.
+pub mod family;
 /// Provider adapters and runtime provider selection.
 pub mod provider;
 /// Local tool runtime helpers.
@@ -82,8 +85,4 @@ pub use provider::validation::{
 };
 pub use tools::{LlmTool, ToolCallError, ToolDispatcher, ToolRegistrationError};
 
-#[cfg(feature = "deepseek")]
-pub use client::DeepSeekProvider;
-#[cfg(feature = "openai-compat")]
-pub use client::OpenAiCompatProvider;
-pub use client::{ChatClient, ChatClientOptions, ProviderEntry, ProviderRegistry};
+pub use client::{BackendFactory, ChatClient, ChatClientOptions};

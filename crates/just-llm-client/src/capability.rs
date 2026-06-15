@@ -61,6 +61,10 @@ impl Stream for ChatCompletionStream {
 /// ("deepseek", "openai-compatible") used for error attribution and diagnostics.
 pub trait Identifiable: Send + Sync {
     /// Returns the backend family used to identify and attribute this backend in errors.
+    ///
+    /// This is the *instance* family of an already-constructed backend. `LlmBackend` also
+    /// provides a static `family()` (used by `BackendFactory` to key registration before any
+    /// backend exists); both return the same centralized `family` constant.
     fn family(&self) -> &'static str;
 }
 

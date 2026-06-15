@@ -1,6 +1,7 @@
 mod common;
 
 use just_llm_client::{
+    LlmBackend,
     provider::DeepSeekBackend,
     types::chat::{
         ChatCompletionRequest, ChatMessage, FunctionDefinition, ToolDefinition, ToolType,

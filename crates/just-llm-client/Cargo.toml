@@ -46,7 +46,7 @@ name = "openai_compat_simple_chat"
 required-features = ["openai-compat"]
 
 [[example]]
-name = "openai_compat_registry"
+name = "openai_compat_factory"
 required-features = ["openai-compat"]
 
 [[example]]

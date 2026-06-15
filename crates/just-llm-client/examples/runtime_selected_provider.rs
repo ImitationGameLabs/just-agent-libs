@@ -14,7 +14,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let prompt = "Say hello in one sentence.";
 
     println!("--- request 1 ---");
-    println!("  [instance] {}", client.instance_id());
+    println!("  [family] {}", client.family());
     println!("  [model] {}", client.model());
     println!("  [system] {}", client.system_prompt().unwrap_or(""),);
     println!("  [user] {prompt}");

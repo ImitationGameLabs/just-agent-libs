@@ -6,9 +6,10 @@
 //! [`UnsupportedCapability`](crate::LlmError::UnsupportedCapability) because the generic
 //! OpenAI-compatible API does not expose a balance endpoint.
 //!
-//! Construct via [`OpenAiCompatBackend::new`] from raw inputs (API key + base URL), via
-//! [`OpenAiCompatBackend::from_provider_client`] with a pre-built provider client, or let
-//! [`OpenAiCompatProvider`](crate::OpenAiCompatProvider) build one through the registry.
+//! Construct from raw inputs (API key + base URL) via the [`LlmBackend::new`] trait method
+//! ([`LlmBackend`] must be in scope), via [`OpenAiCompatBackend::from_provider_client`] with a
+//! pre-built provider client, or through a [`BackendFactory`](crate::BackendFactory) that
+//! registers this backend.
 
 mod conversions;
 
@@ -39,38 +40,6 @@ pub struct OpenAiCompatBackend {
 }
 
 impl OpenAiCompatBackend {
-    /// The backend family string — the single source shared with
-    /// [`OpenAiCompatProvider`](crate::OpenAiCompatProvider) for connect-time error attribution.
-    pub(crate) const FAMILY: &'static str = "openai-compatible";
-
-    /// Primary constructor: build a shared OpenAI-compatible backend from raw inputs.
-    ///
-    /// The Bearer auth header is configured from the API key and injected when the underlying
-    /// client is built (via [`build_client`](just_common::transport::http::build_client), inside
-    /// the SDK builder). Unlike DeepSeek, this provider has no default base URL — `base_url =
-    /// None` surfaces as [`LlmError::Backend`](crate::LlmError::Backend) carrying a
-    /// `TransportError::InvalidConfig("base url is required")` source. Returns the shared trait
-    /// object that the registry and [`ChatClient`](crate::ChatClient) consume.
-    // Intentional: yields the shared `Arc<dyn LlmBackend>` that the registry and `ChatClient`
-    // consume, rather than a concrete `Self`.
-    #[allow(clippy::new_ret_no_self)]
-    pub fn new(
-        http: reqwest::ClientBuilder,
-        api_key: &str,
-        base_url: Option<&str>,
-    ) -> Result<Arc<dyn LlmBackend>, LlmError> {
-        let mut builder = just_openai_compat::OpenAiCompatClient::builder()
-            .api_key(api_key)
-            .http_client(http);
-        if let Some(url) = base_url {
-            builder = builder.base_url(url);
-        }
-        let client = builder
-            .build()
-            .map_err(|e| LlmError::backend(Self::FAMILY, e))?;
-        Ok(Arc::new(OpenAiCompatBackend::from_provider_client(client)))
-    }
-
     /// Creates a new backend from a pre-built provider client.
     pub fn from_provider_client(client: just_openai_compat::OpenAiCompatClient) -> Self {
         Self { client }
@@ -79,7 +48,7 @@ impl OpenAiCompatBackend {
 
 impl Identifiable for OpenAiCompatBackend {
     fn family(&self) -> &'static str {
-        Self::FAMILY
+        crate::family::OPENAI_COMPATIBLE
     }
 }
 
@@ -155,6 +124,39 @@ impl LlmBackend for OpenAiCompatBackend {
         let provider_tools: Vec<just_openai_compat::types::chat::ToolDefinition> =
             tools.iter().cloned().map(Into::into).collect();
         serde_json::to_string(&provider_tools).map_err(LlmError::serialization)
+    }
+
+    fn family() -> &'static str
+    where
+        Self: Sized,
+    {
+        crate::family::OPENAI_COMPATIBLE
+    }
+
+    /// Build a shared OpenAI-compatible backend from raw inputs.
+    ///
+    /// This provider has no default base URL — `base_url = None` surfaces as
+    /// [`LlmError::Backend`](crate::LlmError::Backend) carrying a
+    /// `TransportError::InvalidConfig("base url is required")` source.
+    #[allow(clippy::new_ret_no_self)]
+    fn new(
+        http: reqwest::ClientBuilder,
+        api_key: &str,
+        base_url: Option<&str>,
+    ) -> Result<Arc<dyn LlmBackend>, LlmError>
+    where
+        Self: Sized,
+    {
+        let mut builder = just_openai_compat::OpenAiCompatClient::builder()
+            .api_key(api_key)
+            .http_client(http);
+        if let Some(url) = base_url {
+            builder = builder.base_url(url);
+        }
+        let client = builder
+            .build()
+            .map_err(|e| LlmError::backend(crate::family::OPENAI_COMPATIBLE, e))?;
+        Ok(Arc::new(Self::from_provider_client(client)))
     }
 }
 

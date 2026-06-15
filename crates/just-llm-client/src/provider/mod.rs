@@ -5,6 +5,8 @@ mod openai_compat;
 /// Request validation helpers for building custom backends.
 pub mod validation;
 
+use std::sync::Arc;
+
 use async_trait::async_trait;
 
 use self::validation::{into_validated_streaming_request, validate_non_streaming_request};
@@ -154,4 +156,30 @@ pub trait LlmBackend: Identifiable + CapabilityNegotiation + Send + Sync {
     /// The returned string matches exactly what the provider would receive in the `tools`
     /// field of a chat completion request body. Useful for token estimation.
     fn render_tools(&self, tools: &[ToolDefinition]) -> Result<String, LlmError>;
+
+    /// The backend family this type produces (e.g. [`crate::family::DEEPSEEK`]).
+    ///
+    /// Static — no instance needed — so a [`BackendFactory`](crate::BackendFactory) can key on it
+    /// before constructing anything. It mirrors the instance [`Identifiable::family`], which
+    /// reports the family of an already-built backend; both return the same centralized
+    /// [`family`](crate::family) constant.
+    fn family() -> &'static str
+    where
+        Self: Sized;
+
+    /// Build a shared backend from raw inputs.
+    ///
+    /// Static, so not object-safe: the `Self: Sized` bound excludes it from `dyn LlmBackend`
+    /// (which keeps working for the behavior methods above). Used by
+    /// [`BackendFactory`](crate::BackendFactory); callable on concrete backend types (the trait
+    /// must be in scope for the `Type::new(...)` call). Returns the shared trait object rather than
+    /// a concrete `Self`.
+    #[allow(clippy::new_ret_no_self)]
+    fn new(
+        http: reqwest::ClientBuilder,
+        api_key: &str,
+        base_url: Option<&str>,
+    ) -> Result<Arc<dyn LlmBackend>, LlmError>
+    where
+        Self: Sized;
 }

@@ -1,20 +1,19 @@
-//! Unified chat client and provider registry helpers.
+//! Unified chat client and backend factory.
 //!
-//! This module provides a convenience layer on top of the concrete backend adapters.
-//! For provider-specific behavior not covered by [`LlmBackend`](crate::LlmBackend),
-//! construct the concrete backend directly via
-//! [`DeepSeekBackend`](crate::provider::DeepSeekBackend) or
-//! [`OpenAiCompatBackend`](crate::provider::OpenAiCompatBackend), passing a
-//! `reqwest::ClientBuilder`, API key, and base URL (optional for DeepSeek, required for
-//! OpenAI-compatible) to
-//! [`new`](crate::provider::DeepSeekBackend::new).
+//! Two building blocks on top of the concrete backend adapters:
+//!
+//! - [`BackendFactory`] dispatches a backend family string to that backend's
+//!   [`LlmBackend::new`] constructor — a composable `family ->
+//!   constructor` primitive with no caching or held configuration.
+//! - [`ChatClient`] pairs per-call request defaults (model, system prompt) with a shared
+//!   [`LlmBackend`](crate::LlmBackend) and derefs to `dyn LlmBackend` so chat and capability
+//!   methods are reachable directly.
+//!
+//! Backends can also be constructed directly via
+//! [`LlmBackend::new`] (the trait constructor, with the trait in scope),
+//! or from a pre-built provider client via each backend's `from_provider_client`.
 
-#[cfg(feature = "deepseek")]
-mod deepseek;
-#[cfg(feature = "openai-compat")]
-mod openai_compat;
-mod provider;
-mod registry;
+mod factory;
 
 use std::{ops::Deref, sync::Arc};
 
@@ -23,12 +22,7 @@ use crate::{
     types::chat::{ChatCompletionRequest, ChatMessage},
 };
 
-#[cfg(feature = "deepseek")]
-pub use deepseek::DeepSeekProvider;
-#[cfg(feature = "openai-compat")]
-pub use openai_compat::OpenAiCompatProvider;
-pub use provider::ProviderEntry;
-pub use registry::ProviderRegistry;
+pub use factory::BackendFactory;
 
 /// Per-call defaults for constructing a [`ChatClient`].
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -63,38 +57,30 @@ impl ChatClientOptions {
     }
 }
 
-/// Thin facade that pairs an instance id, default request values, and a shared backend.
+/// Thin facade that pairs per-call default request values with a shared backend.
 ///
-/// Constructed via [`ProviderRegistry::chat`].
-/// Implements [`Deref`] to [`dyn LlmBackend`](crate::LlmBackend) so the direct and prepared chat
-/// execution paths, plus capability negotiation methods, are accessible directly. The underlying
-/// backend is the one produced by [`ProviderEntry::connect`] — e.g. a
-/// [`DeepSeekBackend`](crate::provider::DeepSeekBackend).
+/// Constructed via [`ChatClient::new`], typically with a backend produced by a
+/// [`BackendFactory`] or by [`LlmBackend::new`] directly. Implements
+/// [`Deref`] to [`dyn LlmBackend`](crate::LlmBackend) so the direct and prepared chat execution
+/// paths, plus capability negotiation methods, are accessible directly.
 #[derive(Clone)]
 pub struct ChatClient {
-    instance_id: String,
     model: String,
     system_prompt: Option<String>,
     backend: Arc<dyn LlmBackend>,
 }
 
 impl ChatClient {
-    pub(crate) fn new(
-        instance_id: String,
-        options: ChatClientOptions,
-        backend: Arc<dyn LlmBackend>,
-    ) -> Self {
+    /// Create a client pairing per-call defaults with a shared backend.
+    ///
+    /// The backend identity (family) is available via [`family`](crate::Identifiable::family)
+    /// through the [`Deref`] to [`LlmBackend`].
+    pub fn new(backend: Arc<dyn LlmBackend>, options: ChatClientOptions) -> Self {
         Self {
-            instance_id,
             model: options.model,
             system_prompt: options.system_prompt,
             backend,
         }
-    }
-
-    /// Returns the instance id used to create this client.
-    pub fn instance_id(&self) -> &str {
-        &self.instance_id
     }
 
     /// Returns the resolved model string (explicit or provider default).
@@ -147,10 +133,9 @@ impl Deref for ChatClient {
 impl std::fmt::Debug for ChatClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ChatClient")
-            .field("instance_id", &self.instance_id)
+            .field("family", &self.backend.family())
             .field("model", &self.model)
             .field("has_system_prompt", &self.system_prompt.is_some())
-            .field("family", &self.backend.family())
             .finish()
     }
 }
