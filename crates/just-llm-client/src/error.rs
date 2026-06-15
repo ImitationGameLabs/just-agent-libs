@@ -27,10 +27,6 @@ pub type BoxError = Box<dyn StdError + Send + Sync>;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Capability {
-    /// One-shot chat completion execution.
-    ChatCompletion,
-    /// Incremental chat completion streaming.
-    StreamingChatCompletion,
     /// Model catalog listing.
     ModelCatalog,
     /// Balance or quota inspection.
@@ -40,8 +36,6 @@ pub enum Capability {
 impl fmt::Display for Capability {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let label = match self {
-            Self::ChatCompletion => "chat completion",
-            Self::StreamingChatCompletion => "streaming chat completion",
             Self::ModelCatalog => "model catalog",
             Self::Balance => "balance",
         };
