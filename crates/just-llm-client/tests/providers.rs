@@ -1,5 +1,5 @@
 #[cfg(feature = "openai-compat")]
-use just_llm_client::error::Capability;
+use just_llm_client::error::{Capability, CapabilityError};
 
 #[cfg(feature = "openai-compat")]
 use futures_util::StreamExt;
@@ -14,7 +14,7 @@ use just_llm_client::types::chat::{ToolChoice, ToolChoiceMode};
 #[cfg(any(feature = "deepseek", feature = "openai-compat"))]
 use just_llm_client::{
     LlmBackend,
-    error::LlmError,
+    error::BackendError,
     types::chat::{ChatCompletionRequest, ChatMessage, ToolDefinition},
 };
 #[cfg(any(feature = "deepseek", feature = "openai-compat"))]
@@ -145,7 +145,7 @@ async fn preparation_rejects_invalid_request_combinations() {
 
     let error = backend.prepare(request).unwrap_err();
 
-    assert!(matches!(error, LlmError::InvalidRequest(_)));
+    assert!(matches!(error, BackendError::InvalidRequest(_)));
 }
 
 #[cfg(feature = "deepseek")]
@@ -232,8 +232,8 @@ async fn openai_compat_adapter_maps_models_and_marks_balance_unsupported() {
     assert_eq!(models.data[0].id, "gpt-4.1-mini");
     assert!(matches!(
         error,
-        LlmError::UnsupportedCapability {
-            backend: "openai-compatible",
+        CapabilityError::Unsupported {
+            family: "openai-compatible",
             capability: Capability::Balance,
         }
     ));
@@ -344,12 +344,8 @@ async fn parse_surfaces_http_status_for_error_response() {
     // parse runs ensure_success; the backend wraps the provider's ProviderError, whose Transport
     // variant carries the HttpStatus.
     let error = backend.parse(response).await.unwrap_err();
-    let LlmError::Backend {
-        backend: id,
-        source,
-    } = error
-    else {
-        panic!("expected LlmError::Backend");
+    let BackendError::Provider { family: id, source } = error else {
+        panic!("expected BackendError::Provider");
     };
     assert_eq!(id, "openai-compatible");
     let provider_err = source
@@ -385,8 +381,8 @@ async fn parse_surfaces_deserialize_error_for_malformed_body() {
 
     // A 2xx body that fails to deserialize surfaces as Backend(ProviderError::Deserialize).
     let error = backend.parse(response).await.unwrap_err();
-    let LlmError::Backend { source, .. } = error else {
-        panic!("expected LlmError::Backend");
+    let BackendError::Provider { source, .. } = error else {
+        panic!("expected BackendError::Provider");
     };
     let provider_err = source
         .downcast_ref::<just_common::error::ProviderError>()
@@ -439,7 +435,7 @@ async fn chat_completion_rejects_streaming_requests() {
 
     let error = backend.chat_completion(request).await.unwrap_err();
 
-    assert!(matches!(error, LlmError::InvalidRequest(_)));
+    assert!(matches!(error, BackendError::InvalidRequest(_)));
 }
 
 #[cfg(feature = "openai-compat")]

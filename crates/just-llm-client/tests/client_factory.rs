@@ -5,8 +5,8 @@ use std::{marker::PhantomData, sync::Arc};
 use async_trait::async_trait;
 use futures_util::stream;
 use just_llm_client::{
-    BackendFactory, CapabilityNegotiation, ChatClient, ChatClientOptions, ChatCompletionStream,
-    Identifiable, LlmBackend, LlmError,
+    BackendConstructError, BackendError, BackendFactory, CapabilityNegotiation, ChatClient,
+    ChatClientOptions, ChatCompletionStream, Identifiable, LlmBackend,
     types::chat::{
         AssistantMessage, AssistantRole, ChatChoice, ChatCompletionRequest, ChatCompletionResponse,
         ChatMessage, ToolDefinition,
@@ -35,7 +35,7 @@ impl<F: TestBackendFamily> CapabilityNegotiation for TestBackend<F> {}
 
 #[async_trait]
 impl<F: TestBackendFamily> LlmBackend for TestBackend<F> {
-    fn prepare(&self, request: ChatCompletionRequest) -> Result<reqwest::Request, LlmError> {
+    fn prepare(&self, request: ChatCompletionRequest) -> Result<reqwest::Request, BackendError> {
         // Points at an unreachable URL; `chat_completion` is overridden below so this is never sent.
         self.http
             .post("http://127.0.0.1:0/chat/completions")
@@ -44,53 +44,53 @@ impl<F: TestBackendFamily> LlmBackend for TestBackend<F> {
                 "messages": request.messages,
             }))
             .build()
-            .map_err(|e| LlmError::backend(F::FAMILY, e))
+            .map_err(|e| BackendError::provider(F::FAMILY, e))
     }
 
     fn prepare_streaming(
         &self,
         request: ChatCompletionRequest,
-    ) -> Result<reqwest::Request, LlmError> {
+    ) -> Result<reqwest::Request, BackendError> {
         self.prepare(request)
     }
 
-    async fn send(&self, _prepared: reqwest::Request) -> Result<reqwest::Response, LlmError> {
+    async fn send(&self, _prepared: reqwest::Request) -> Result<reqwest::Response, BackendError> {
         unreachable!("send is not used: chat_completion is overridden")
     }
 
     async fn chat_completion(
         &self,
         request: ChatCompletionRequest,
-    ) -> Result<ChatCompletionResponse, LlmError> {
+    ) -> Result<ChatCompletionResponse, BackendError> {
         Ok(response_for_model(request.model))
     }
 
     async fn stream_chat_completion(
         &self,
         _request: ChatCompletionRequest,
-    ) -> Result<ChatCompletionStream, LlmError> {
+    ) -> Result<ChatCompletionStream, BackendError> {
         Ok(ChatCompletionStream::new(Box::pin(stream::empty())))
     }
 
     async fn parse(
         &self,
         _response: reqwest::Response,
-    ) -> Result<ChatCompletionResponse, LlmError> {
+    ) -> Result<ChatCompletionResponse, BackendError> {
         unreachable!("parse is not used: chat_completion is overridden")
     }
 
     async fn parse_streaming(
         &self,
         _response: reqwest::Response,
-    ) -> Result<ChatCompletionStream, LlmError> {
+    ) -> Result<ChatCompletionStream, BackendError> {
         unreachable!("parse_streaming is not used: stream_chat_completion is overridden")
     }
 
-    fn render_messages(&self, _messages: &[ChatMessage]) -> Result<String, LlmError> {
+    fn render_messages(&self, _messages: &[ChatMessage]) -> Result<String, BackendError> {
         Ok(F::RENDER.to_owned())
     }
 
-    fn render_tools(&self, _tools: &[ToolDefinition]) -> Result<String, LlmError> {
+    fn render_tools(&self, _tools: &[ToolDefinition]) -> Result<String, BackendError> {
         Ok("[]".to_owned())
     }
 
@@ -106,7 +106,7 @@ impl<F: TestBackendFamily> LlmBackend for TestBackend<F> {
         _http: reqwest::ClientBuilder,
         _api_key: &str,
         _base_url: Option<&str>,
-    ) -> Result<Arc<dyn LlmBackend>, LlmError>
+    ) -> Result<Arc<dyn LlmBackend>, BackendConstructError>
     where
         Self: Sized,
     {
@@ -209,9 +209,9 @@ fn factory_create_rejects_unknown_family() {
         .err()
         .expect("expected unknown-family error");
 
-    assert!(matches!(error, LlmError::InvalidRequest(_)));
+    assert!(matches!(error, BackendConstructError::UnknownFamily { .. }));
     assert_eq!(
         error.to_string(),
-        "invalid request: unknown family: missing"
+        "no backend registered for family 'missing'"
     );
 }

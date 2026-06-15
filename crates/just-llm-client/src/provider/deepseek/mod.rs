@@ -19,7 +19,7 @@ use crate::{
     capability::{
         Balance, CapabilityNegotiation, ChatCompletionStream, Identifiable, ModelCatalog,
     },
-    error::LlmError,
+    error::{BackendConstructError, BackendError, CapabilityError},
     provider::validation::{into_validated_streaming_request, validate_non_streaming_request},
     types::{
         balance::{BalanceEntry, BalanceSnapshot, Currency},
@@ -53,11 +53,11 @@ impl Identifiable for DeepSeekBackend {
 }
 
 impl CapabilityNegotiation for DeepSeekBackend {
-    fn model_catalog(&self) -> Result<&dyn ModelCatalog, LlmError> {
+    fn model_catalog(&self) -> Result<&dyn ModelCatalog, CapabilityError> {
         Ok(self)
     }
 
-    fn balance(&self) -> Result<&dyn Balance, LlmError> {
+    fn balance(&self) -> Result<&dyn Balance, CapabilityError> {
         Ok(self)
     }
 }
@@ -66,68 +66,71 @@ impl CapabilityNegotiation for DeepSeekBackend {
 impl LlmBackend for DeepSeekBackend {
     // --- prepare / send (raw HTTP surface) ---
 
-    fn prepare(&self, request: ChatCompletionRequest) -> Result<reqwest::Request, LlmError> {
+    fn prepare(&self, request: ChatCompletionRequest) -> Result<reqwest::Request, BackendError> {
         validate_non_streaming_request(&request, "prepare", "prepare_streaming")?;
         let provider_req: just_deepseek::types::chat::ChatCompletionRequest = request.into();
         self.client
             .prepare(provider_req)
-            .map_err(|e| LlmError::backend(self.family(), e))
+            .map_err(|e| BackendError::provider(self.family(), e))
     }
 
     fn prepare_streaming(
         &self,
         request: ChatCompletionRequest,
-    ) -> Result<reqwest::Request, LlmError> {
+    ) -> Result<reqwest::Request, BackendError> {
         let request = into_validated_streaming_request(request, "prepare_streaming")?;
         let provider_req: just_deepseek::types::chat::ChatCompletionRequest = request.into();
         self.client
             .prepare_streaming(provider_req)
-            .map_err(|e| LlmError::backend(self.family(), e))
+            .map_err(|e| BackendError::provider(self.family(), e))
     }
 
-    async fn send(&self, prepared: reqwest::Request) -> Result<reqwest::Response, LlmError> {
+    async fn send(&self, prepared: reqwest::Request) -> Result<reqwest::Response, BackendError> {
         self.client
             .send(prepared)
             .await
-            .map_err(|e| LlmError::backend(self.family(), e))
+            .map_err(|e| BackendError::provider(self.family(), e))
     }
 
     // --- parse + rendering ---
 
-    async fn parse(&self, response: reqwest::Response) -> Result<ChatCompletionResponse, LlmError> {
+    async fn parse(
+        &self,
+        response: reqwest::Response,
+    ) -> Result<ChatCompletionResponse, BackendError> {
         // Deserialize into the provider-native type, then lift to the normalized client type.
         let native: just_deepseek::types::chat::ChatCompletion = self
             .client
             .parse(response)
             .await
-            .map_err(|e| LlmError::backend(self.family(), e))?;
+            .map_err(|e| BackendError::provider(self.family(), e))?;
         Ok(native.into())
     }
 
     async fn parse_streaming(
         &self,
         response: reqwest::Response,
-    ) -> Result<ChatCompletionStream, LlmError> {
+    ) -> Result<ChatCompletionStream, BackendError> {
         // The provider stream yields provider-native chunks; map to normalized types.
         let stream = self
             .client
             .parse_streaming(response)
             .await
-            .map_err(|e| LlmError::backend(self.family(), e))?;
+            .map_err(|e| BackendError::provider(self.family(), e))?;
         let mapped = stream.map(|chunk| chunk.map(Into::into));
         Ok(ChatCompletionStream::new(Box::pin(mapped)))
     }
 
-    fn render_messages(&self, messages: &[ChatMessage]) -> Result<String, LlmError> {
+    fn render_messages(&self, messages: &[ChatMessage]) -> Result<String, BackendError> {
         let provider_messages: Vec<just_deepseek::types::chat::ChatMessage> =
             messages.iter().cloned().map(Into::into).collect();
-        serde_json::to_string(&provider_messages).map_err(LlmError::serialization)
+        serde_json::to_string(&provider_messages).map_err(BackendError::serialization)
     }
 
-    fn render_tools(&self, tools: &[ToolDefinition]) -> Result<String, LlmError> {
+    fn render_tools(&self, tools: &[ToolDefinition]) -> Result<String, BackendError> {
         let provider_tools: Vec<just_deepseek::types::chat::ToolDefinition> =
             tools.iter().cloned().map(Into::into).collect();
-        serde_json::to_string(&provider_tools).map_err(LlmError::serialization)
+        serde_json::to_string(&provider_tools).map_err(BackendError::serialization)
     }
 
     fn family() -> &'static str
@@ -145,7 +148,7 @@ impl LlmBackend for DeepSeekBackend {
         http: reqwest::ClientBuilder,
         api_key: &str,
         base_url: Option<&str>,
-    ) -> Result<Arc<dyn LlmBackend>, LlmError>
+    ) -> Result<Arc<dyn LlmBackend>, BackendConstructError>
     where
         Self: Sized,
     {
@@ -157,19 +160,19 @@ impl LlmBackend for DeepSeekBackend {
         }
         let client = builder
             .build()
-            .map_err(|e| LlmError::backend(crate::family::DEEPSEEK, e))?;
+            .map_err(|e| BackendConstructError::provider(crate::family::DEEPSEEK, e))?;
         Ok(Arc::new(Self::from_provider_client(client)))
     }
 }
 
 #[async_trait]
 impl ModelCatalog for DeepSeekBackend {
-    async fn list_models(&self) -> Result<ModelCatalogResponse, LlmError> {
+    async fn list_models(&self) -> Result<ModelCatalogResponse, BackendError> {
         let models = self
             .client
             .list_models()
             .await
-            .map_err(|e| LlmError::backend(self.family(), e))?;
+            .map_err(|e| BackendError::provider(self.family(), e))?;
 
         Ok(ModelCatalogResponse {
             data: models
@@ -187,12 +190,12 @@ impl ModelCatalog for DeepSeekBackend {
 
 #[async_trait]
 impl Balance for DeepSeekBackend {
-    async fn get_balance(&self) -> Result<BalanceSnapshot, LlmError> {
+    async fn get_balance(&self) -> Result<BalanceSnapshot, BackendError> {
         let balance = self
             .client
             .get_user_balance()
             .await
-            .map_err(|e| LlmError::backend(self.family(), e))?;
+            .map_err(|e| BackendError::provider(self.family(), e))?;
 
         Ok(BalanceSnapshot {
             is_available: balance.is_available,

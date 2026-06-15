@@ -47,25 +47,25 @@ impl CapabilityNegotiation for MyBackend {}
 #[async_trait]
 impl LlmBackend for MyBackend {
     fn prepare(&self, request: ChatCompletionRequest)
-        -> Result<reqwest::Request, LlmError> { /* ... */ }
+        -> Result<reqwest::Request, BackendError> { /* ... */ }
 
     fn prepare_streaming(&self, request: ChatCompletionRequest)
-        -> Result<reqwest::Request, LlmError> { /* ... */ }
+        -> Result<reqwest::Request, BackendError> { /* ... */ }
 
     async fn send(&self, prepared: reqwest::Request)
-        -> Result<reqwest::Response, LlmError> { /* ... */ }
+        -> Result<reqwest::Response, BackendError> { /* ... */ }
 
     async fn parse(&self, response: reqwest::Response)
-        -> Result<ChatCompletionResponse, LlmError> { /* ... */ }
+        -> Result<ChatCompletionResponse, BackendError> { /* ... */ }
 
     async fn parse_streaming(&self, response: reqwest::Response)
-        -> Result<ChatCompletionStream, LlmError> { /* ... */ }
+        -> Result<ChatCompletionStream, BackendError> { /* ... */ }
 
     fn render_messages(&self, messages: &[ChatMessage])
-        -> Result<String, LlmError> { /* ... */ }
+        -> Result<String, BackendError> { /* ... */ }
 
     fn render_tools(&self, tools: &[ToolDefinition])
-        -> Result<String, LlmError> { /* ... */ }
+        -> Result<String, BackendError> { /* ... */ }
 
     // chat_completion and stream_chat_completion have default impls
     // (prepare + send + parse); override only for non-HTTP backends.

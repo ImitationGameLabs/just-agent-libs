@@ -1,10 +1,13 @@
 use std::{collections::HashMap, sync::Arc};
 
-use crate::{error::LlmError, provider::LlmBackend};
+use crate::{error::BackendConstructError, provider::LlmBackend};
 
 /// Function pointer that builds a shared backend from raw inputs.
-type BackendBuilder =
-    fn(reqwest::ClientBuilder, &str, Option<&str>) -> Result<Arc<dyn LlmBackend>, LlmError>;
+type BackendBuilder = fn(
+    reqwest::ClientBuilder,
+    &str,
+    Option<&str>,
+) -> Result<Arc<dyn LlmBackend>, BackendConstructError>;
 
 /// Dispatch table from backend family to its constructor function.
 ///
@@ -64,20 +67,20 @@ impl BackendFactory {
 
     /// Build a shared backend for `family` from raw inputs.
     ///
-    /// Returns [`LlmError::invalid_request`](crate::LlmError::invalid_request) when no constructor
-    /// is registered for `family`.
+    /// Returns [`BackendConstructError::unknown_family`](crate::BackendConstructError::unknown_family)
+    /// when no constructor is registered for `family`.
     pub fn create(
         &self,
         family: &str,
         http: reqwest::ClientBuilder,
         api_key: &str,
         base_url: Option<&str>,
-    ) -> Result<Arc<dyn LlmBackend>, LlmError> {
+    ) -> Result<Arc<dyn LlmBackend>, BackendConstructError> {
         let build = self
             .builders
             .get(family)
             .copied()
-            .ok_or_else(|| LlmError::invalid_request(format!("unknown family: {family}")))?;
+            .ok_or_else(|| BackendConstructError::unknown_family(family.to_owned()))?;
         build(http, api_key, base_url)
     }
 

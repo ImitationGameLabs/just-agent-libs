@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use futures_core::Stream;
 
 use crate::{
-    error::{Capability, LlmError},
+    error::{BackendError, Capability, CapabilityError},
     types::{balance::BalanceSnapshot, chat::ChatCompletionChunk, model::ModelCatalogResponse},
 };
 
@@ -72,32 +72,35 @@ pub trait Identifiable: Send + Sync {
 #[async_trait]
 pub trait ModelCatalog: Identifiable {
     /// Returns the provider's current model catalog.
-    async fn list_models(&self) -> Result<ModelCatalogResponse, LlmError>;
+    async fn list_models(&self) -> Result<ModelCatalogResponse, BackendError>;
 }
 
 /// Query account balance or quota state.
 #[async_trait]
 pub trait Balance: Identifiable {
     /// Returns the provider's current balance snapshot.
-    async fn get_balance(&self) -> Result<BalanceSnapshot, LlmError>;
+    async fn get_balance(&self) -> Result<BalanceSnapshot, BackendError>;
 }
 
 /// Explicit capability negotiation for runtime-selected or otherwise abstract backends.
 ///
 /// Each successful negotiation returns a handle that only exposes the requested behavior. If a
-/// backend does not support a capability, the unsupported error is surfaced here instead of on the
-/// capability trait itself.
+/// backend does not support a capability, [`CapabilityError`] is surfaced here instead of an error
+/// from the capability trait itself.
 pub trait CapabilityNegotiation: Identifiable {
     /// Returns a handle for model catalog inspection when the backend supports it.
-    fn model_catalog(&self) -> Result<&dyn ModelCatalog, LlmError> {
-        Err(LlmError::unsupported(
+    fn model_catalog(&self) -> Result<&dyn ModelCatalog, CapabilityError> {
+        Err(CapabilityError::unsupported(
             self.family(),
             Capability::ModelCatalog,
         ))
     }
 
     /// Returns a handle for balance inspection when the backend supports it.
-    fn balance(&self) -> Result<&dyn Balance, LlmError> {
-        Err(LlmError::unsupported(self.family(), Capability::Balance))
+    fn balance(&self) -> Result<&dyn Balance, CapabilityError> {
+        Err(CapabilityError::unsupported(
+            self.family(),
+            Capability::Balance,
+        ))
     }
 }

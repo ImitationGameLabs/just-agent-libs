@@ -42,7 +42,7 @@
 //! convenience methods, all with concrete types (no associated types). [`ChatClient`]
 //! derefs to `dyn LlmBackend` so all methods are available without importing the trait explicitly.
 //! Optional operations are negotiated through [`CapabilityNegotiation`] before use so
-//! `UnsupportedCapability` is reported at the negotiation boundary instead of from the
+//! [`CapabilityError::Unsupported`] is reported at the negotiation boundary instead of from the
 //! capability method itself.
 //!
 //! # DTO layering
@@ -75,7 +75,7 @@ pub mod types;
 pub use capability::{
     Balance, CapabilityNegotiation, ChatCompletionStream, Identifiable, ModelCatalog,
 };
-pub use error::{Capability, LlmError};
+pub use error::{BackendConstructError, BackendError, Capability, CapabilityError};
 pub use just_common::error::{ProviderError, TransportError};
 pub use just_common::transport::http::{build_client, endpoint_url, ensure_success, parse_json};
 pub use just_common::transport::sse::JsonEventStream;

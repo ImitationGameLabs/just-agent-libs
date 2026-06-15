@@ -13,7 +13,7 @@ use self::validation::{into_validated_streaming_request, validate_non_streaming_
 use crate::{
     CapabilityNegotiation, Identifiable,
     capability::ChatCompletionStream,
-    error::LlmError,
+    error::{BackendConstructError, BackendError},
     types::chat::{ChatCompletionRequest, ChatCompletionResponse, ChatMessage, ToolDefinition},
 };
 
@@ -73,7 +73,7 @@ pub trait LlmBackend: Identifiable + CapabilityNegotiation + Send + Sync {
     ///
     /// This is a synchronous operation — it validates and serializes the request but performs no
     /// IO.
-    fn prepare(&self, request: ChatCompletionRequest) -> Result<reqwest::Request, LlmError>;
+    fn prepare(&self, request: ChatCompletionRequest) -> Result<reqwest::Request, BackendError>;
 
     /// Prepare a streaming request for later execution.
     ///
@@ -81,7 +81,7 @@ pub trait LlmBackend: Identifiable + CapabilityNegotiation + Send + Sync {
     fn prepare_streaming(
         &self,
         request: ChatCompletionRequest,
-    ) -> Result<reqwest::Request, LlmError>;
+    ) -> Result<reqwest::Request, BackendError>;
 
     /// Send a prepared request and return the raw HTTP response.
     ///
@@ -91,7 +91,7 @@ pub trait LlmBackend: Identifiable + CapabilityNegotiation + Send + Sync {
     ///
     /// For automatic status checking and deserialization, use [`chat_completion`](LlmBackend::chat_completion)
     /// or [`stream_chat_completion`](LlmBackend::stream_chat_completion) instead.
-    async fn send(&self, prepared: reqwest::Request) -> Result<reqwest::Response, LlmError>;
+    async fn send(&self, prepared: reqwest::Request) -> Result<reqwest::Response, BackendError>;
 
     /// Parse a raw response into a normalized non-streaming completion.
     ///
@@ -102,7 +102,10 @@ pub trait LlmBackend: Identifiable + CapabilityNegotiation + Send + Sync {
     /// Pair with [`prepare`](LlmBackend::prepare) + [`send`](LlmBackend::send) when you need
     /// the raw response in hand, e.g. to inspect `retry-after` / `x-ratelimit-*` headers, or
     /// to clone the prepared request for retry, before deserializing.
-    async fn parse(&self, response: reqwest::Response) -> Result<ChatCompletionResponse, LlmError>;
+    async fn parse(
+        &self,
+        response: reqwest::Response,
+    ) -> Result<ChatCompletionResponse, BackendError>;
 
     /// Parse a raw response into a normalized streaming chunk stream.
     ///
@@ -112,7 +115,7 @@ pub trait LlmBackend: Identifiable + CapabilityNegotiation + Send + Sync {
     async fn parse_streaming(
         &self,
         response: reqwest::Response,
-    ) -> Result<ChatCompletionStream, LlmError>;
+    ) -> Result<ChatCompletionStream, BackendError>;
 
     /// Execute a non-streaming chat completion: validate -> prepare -> send -> parse.
     ///
@@ -123,7 +126,7 @@ pub trait LlmBackend: Identifiable + CapabilityNegotiation + Send + Sync {
     async fn chat_completion(
         &self,
         request: ChatCompletionRequest,
-    ) -> Result<ChatCompletionResponse, LlmError> {
+    ) -> Result<ChatCompletionResponse, BackendError> {
         validate_non_streaming_request(&request, "chat_completion", "stream_chat_completion")?;
         let prepared = self.prepare(request)?;
         let response = self.send(prepared).await?;
@@ -138,7 +141,7 @@ pub trait LlmBackend: Identifiable + CapabilityNegotiation + Send + Sync {
     async fn stream_chat_completion(
         &self,
         request: ChatCompletionRequest,
-    ) -> Result<ChatCompletionStream, LlmError> {
+    ) -> Result<ChatCompletionStream, BackendError> {
         let request = into_validated_streaming_request(request, "stream_chat_completion")?;
         let prepared = self.prepare_streaming(request)?;
         let response = self.send(prepared).await?;
@@ -149,13 +152,13 @@ pub trait LlmBackend: Identifiable + CapabilityNegotiation + Send + Sync {
     ///
     /// The returned string matches exactly what the provider would receive in the `messages`
     /// field of a chat completion request body. Useful for token estimation.
-    fn render_messages(&self, messages: &[ChatMessage]) -> Result<String, LlmError>;
+    fn render_messages(&self, messages: &[ChatMessage]) -> Result<String, BackendError>;
 
     /// Render tool definitions to their provider-specific JSON string representation.
     ///
     /// The returned string matches exactly what the provider would receive in the `tools`
     /// field of a chat completion request body. Useful for token estimation.
-    fn render_tools(&self, tools: &[ToolDefinition]) -> Result<String, LlmError>;
+    fn render_tools(&self, tools: &[ToolDefinition]) -> Result<String, BackendError>;
 
     /// The backend family this type produces (e.g. [`crate::family::DEEPSEEK`]).
     ///
@@ -179,7 +182,7 @@ pub trait LlmBackend: Identifiable + CapabilityNegotiation + Send + Sync {
         http: reqwest::ClientBuilder,
         api_key: &str,
         base_url: Option<&str>,
-    ) -> Result<Arc<dyn LlmBackend>, LlmError>
+    ) -> Result<Arc<dyn LlmBackend>, BackendConstructError>
     where
         Self: Sized;
 }

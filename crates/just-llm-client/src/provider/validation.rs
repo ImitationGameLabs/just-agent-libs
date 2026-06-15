@@ -1,5 +1,5 @@
 use crate::{
-    LlmError,
+    BackendError,
     types::chat::{ChatCompletionRequest, ToolChoice},
 };
 
@@ -8,17 +8,17 @@ pub fn validate_non_streaming_request(
     request: &ChatCompletionRequest,
     method_name: &'static str,
     streaming_method_name: &'static str,
-) -> Result<(), LlmError> {
+) -> Result<(), BackendError> {
     validate_common_request(request)?;
 
     if request.stream.unwrap_or(false) {
-        return Err(LlmError::invalid_request(format!(
+        return Err(BackendError::invalid_request(format!(
             "stream=true is not supported by {method_name}; use {streaming_method_name} instead"
         )));
     }
 
     if request.stream_options.is_some() {
-        return Err(LlmError::invalid_request(
+        return Err(BackendError::invalid_request(
             "stream_options require stream=true",
         ));
     }
@@ -30,11 +30,11 @@ pub fn validate_non_streaming_request(
 pub fn into_validated_streaming_request(
     mut request: ChatCompletionRequest,
     method_name: &'static str,
-) -> Result<ChatCompletionRequest, LlmError> {
+) -> Result<ChatCompletionRequest, BackendError> {
     validate_common_request(&request)?;
 
     if request.stream == Some(false) {
-        return Err(LlmError::invalid_request(format!(
+        return Err(BackendError::invalid_request(format!(
             "stream=false is not supported by {method_name}"
         )));
     }
@@ -44,9 +44,9 @@ pub fn into_validated_streaming_request(
 }
 
 /// Validates request fields shared by streaming and non-streaming paths.
-pub fn validate_common_request(request: &ChatCompletionRequest) -> Result<(), LlmError> {
+pub fn validate_common_request(request: &ChatCompletionRequest) -> Result<(), BackendError> {
     if request.tool_choice.is_some() && request.tools.as_ref().is_none_or(Vec::is_empty) {
-        return Err(LlmError::invalid_request(
+        return Err(BackendError::invalid_request(
             "tool_choice requires at least one configured tool",
         ));
     }
@@ -59,7 +59,7 @@ pub fn validate_common_request(request: &ChatCompletionRequest) -> Result<(), Ll
         });
 
         if !tool_exists {
-            return Err(LlmError::invalid_request(format!(
+            return Err(BackendError::invalid_request(format!(
                 "tool_choice references unknown tool '{}'",
                 choice.function.name
             )));
@@ -67,7 +67,7 @@ pub fn validate_common_request(request: &ChatCompletionRequest) -> Result<(), Ll
     }
 
     if request.top_logprobs.is_some() && request.logprobs != Some(true) {
-        return Err(LlmError::invalid_request(
+        return Err(BackendError::invalid_request(
             "top_logprobs requires logprobs=true",
         ));
     }
