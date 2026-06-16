@@ -18,6 +18,12 @@ pub enum TransportError {
     #[error("request failed: {0}")]
     Transport(#[source] reqwest::Error),
 
+    /// A non-success HTTP status, with the full response body captured as diagnostic text.
+    ///
+    /// `body` is read under the shared size cap (`MAX_BODY_BYTES`). Bodies that fit are captured
+    /// in full; an oversized error body instead surfaces as [`BodyTooLarge`](Self::BodyTooLarge)
+    /// and this variant is not produced. So when this variant is present, `body` is complete —
+    /// never a truncated prefix.
     #[error("api returned {status}")]
     HttpStatus { status: StatusCode, body: String },
 
@@ -39,6 +45,17 @@ pub enum TransportError {
     #[error("failed to decode streamed response as UTF-8: {0}")]
     Utf8(#[source] FromUtf8Error),
 
+    /// A non-streaming response body exceeded the shared size cap and was not fully buffered.
+    ///
+    /// Produced by the capped body reader (`read_body_text`). Distinct from
+    /// [`InvalidResponse`](Self::InvalidResponse), which reports *content* problems (empty body,
+    /// malformed structure) rather than a size limit. The reader stops before the offending chunk
+    /// is appended, so no body text is carried here. When the overflow occurs while reading an
+    /// *error* body, the HTTP status is not carried here either — it is visible only to callers
+    /// that read status off the raw response before consuming the body (the `prepare`/`send` path).
+    #[error("response body exceeded {limit}-byte limit")]
+    BodyTooLarge { limit: usize },
+
     #[error("invalid response: {0}")]
     InvalidResponse(String),
 }
@@ -53,7 +70,7 @@ pub enum ProviderError {
     /// event that fails to parse originates as `TransportError::Deserialize` and
     /// is wrapped here, **not** as the [`Deserialize`](Self::Deserialize) variant
     /// below, which is reserved for full response-body failures from `parse_json`.
-    #[error(transparent)]
+    #[error("transport error: {0}")]
     Transport(#[from] TransportError),
 
     /// The request shape was invalid for the selected client method.
@@ -76,4 +93,42 @@ pub enum ProviderError {
         source: serde_json::Error,
         body: String,
     },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::error::Error as StdError;
+
+    /// After dropping `#[error(transparent)]` from `ProviderError::Transport`, the wrapped
+    /// `TransportError` must be reachable by walking `source()` and downcasting — so a consumer
+    /// can recover, e.g. a 429 status from the error object. This contract would have failed
+    /// before the change: `transparent` flattened `TransportError` out of the source chain.
+    #[test]
+    fn transport_error_reachable_via_source_chain() {
+        let te = TransportError::HttpStatus {
+            status: StatusCode::TOO_MANY_REQUESTS,
+            body: "rate limited".into(),
+        };
+        let pe: ProviderError = te.into(); // ProviderError::Transport(te)
+
+        let mut cur: Option<&(dyn StdError + 'static)> = Some(&pe);
+        let mut found = None;
+        while let Some(e) = cur {
+            if let Some(t) = e.downcast_ref::<TransportError>() {
+                found = Some(t);
+                break;
+            }
+            cur = e.source();
+        }
+
+        let found = found.expect("TransportError must be reachable via the source chain");
+        assert!(
+            matches!(
+                found,
+                TransportError::HttpStatus { status, .. } if *status == StatusCode::TOO_MANY_REQUESTS
+            ),
+            "expected HttpStatus 429, got {found:?}"
+        );
+    }
 }

@@ -1,4 +1,13 @@
 //! Shared SSE parsing for OpenAI-like JSON chunk streams.
+//!
+//! # Known limitation: unbounded buffering
+//!
+//! The pending byte buffer grows without limit until a blank line terminates an event, and each
+//! event's `data:` payload is materialized in full before deserialization. Unlike the
+//! non-streaming path (capped by `crate::transport::http::MAX_BODY_BYTES`), there is no size cap
+//! here, so a malicious or broken server emitting very large events — or withholding the
+//! terminating blank line — can drive unbounded memory growth. Acceptable today because providers
+//! bound event size server-side; tighten if this is ever exposed to untrusted endpoints.
 
 use std::{
     fmt,

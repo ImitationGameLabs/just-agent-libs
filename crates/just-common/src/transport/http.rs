@@ -15,6 +15,17 @@ use serde::de::DeserializeOwned;
 
 use crate::error::{ProviderError, TransportError};
 
+/// Maximum response-body size, in bytes, read into memory by the shared transport helpers.
+///
+/// Bounds every non-streaming body read (`read_body_text`) — both diagnostic error bodies
+/// ([`TransportError::HttpStatus`]) and full response bodies fed to the deserializer
+/// ([`parse_json`]) — so a malicious or broken server cannot exhaust memory with an arbitrarily
+/// large body. Generous for any realistic chat-completion, model-catalog, or balance response.
+///
+/// This caps non-streaming reads only; the SSE streaming path is intentionally uncapped today
+/// (see the `sse` module's "Known limitation" note).
+pub(crate) const MAX_BODY_BYTES: usize = 8 * 1024 * 1024; // 8 MiB
+
 /// Applies Bearer auth and JSON accept headers to a caller-provided builder, then builds.
 ///
 /// Use this when you need to customise TLS, proxy, connection pool, or other transport
@@ -35,7 +46,42 @@ pub fn build_client(
         .map_err(TransportError::BuildClient)
 }
 
-/// Returns an error for non-success HTTP responses while preserving the raw response body.
+/// Appends `chunk` to `buf` unless doing so would exceed `limit` bytes.
+///
+/// Pure core of the body-size cap, split out so it is unit-testable without a live HTTP server.
+/// On overflow it returns [`TransportError::BodyTooLarge`] *without* appending the chunk.
+fn append_capped(buf: &mut Vec<u8>, chunk: &[u8], limit: usize) -> Result<(), TransportError> {
+    if buf.len().saturating_add(chunk.len()) > limit {
+        return Err(TransportError::BodyTooLarge { limit });
+    }
+    buf.extend_from_slice(chunk);
+    Ok(())
+}
+
+/// Reads the full response body as UTF-8 text, capped at `MAX_BODY_BYTES`.
+///
+/// This is the single place a non-streaming response body is consumed. Draining the chunk stream
+/// incrementally (rather than `Response::text`) lets the cap reject an oversized body before it is
+/// fully buffered. Reuses existing [`TransportError`] variants: a stream error becomes
+/// [`Transport`](TransportError::Transport), an invalid-UTF-8 body becomes
+/// [`Utf8`](TransportError::Utf8), and an oversized body becomes
+/// [`BodyTooLarge`](TransportError::BodyTooLarge).
+async fn read_body_text(response: Response) -> Result<String, TransportError> {
+    use futures_util::StreamExt;
+    let mut buf = Vec::new();
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(TransportError::Transport)?;
+        append_capped(&mut buf, &chunk, MAX_BODY_BYTES)?;
+    }
+    String::from_utf8(buf).map_err(TransportError::Utf8)
+}
+
+/// Returns an error for non-success HTTP responses, preserving up to `MAX_BODY_BYTES` of body.
+///
+/// On a non-success status the body is read via the capped `read_body_text`; an oversized error
+/// body yields [`TransportError::BodyTooLarge`] rather than [`TransportError::HttpStatus`] (the
+/// status is then not carried — an accepted trade-off for an extreme edge case).
 pub async fn ensure_success(response: Response) -> Result<Response, TransportError> {
     let status = response.status();
 
@@ -43,7 +89,7 @@ pub async fn ensure_success(response: Response) -> Result<Response, TransportErr
         return Ok(response);
     }
 
-    let body = response.text().await.map_err(TransportError::Transport)?;
+    let body = read_body_text(response).await?;
     Err(TransportError::HttpStatus { status, body })
 }
 
@@ -77,15 +123,23 @@ pub fn endpoint_url(base_url: &str, path: &str) -> Result<String, TransportError
 
 /// Checks HTTP status, then reads the response body and deserializes it as JSON.
 ///
-/// A non-success status is returned as a [`TransportError::HttpStatus`] (with the raw body
-/// preserved) before deserialization is attempted. An empty response body is returned as a
-/// [`TransportError::InvalidResponse`] rather than reaching the deserializer, since the serde
-/// "EOF while parsing a value" message would otherwise mislead readers into suspecting
-/// truncation. On any other deserialization failure the raw body text is likewise preserved in
-/// the error for diagnostics.
+/// Both the error body (on a non-success status) and the success body are read through the capped
+/// `read_body_text`. An empty response body is returned as a [`TransportError::InvalidResponse`]
+/// rather than reaching the deserializer, since the serde "EOF while parsing a value" message
+/// would otherwise mislead readers into suspecting truncation. On any other deserialization
+/// failure the raw body text is likewise preserved in the error for diagnostics.
+///
+/// # Errors
+///
+/// - Non-success status → [`TransportError::HttpStatus`] (full body, up to `MAX_BODY_BYTES`;
+///   larger error bodies surface as `BodyTooLarge` instead).
+/// - Oversized body (error or success) → [`TransportError::BodyTooLarge`].
+/// - Invalid-UTF-8 body → [`TransportError::Utf8`].
+/// - Stream/transport failure → [`TransportError::Transport`].
+/// - Malformed JSON → [`ProviderError::Deserialize`].
 pub async fn parse_json<T: DeserializeOwned>(response: Response) -> Result<T, ProviderError> {
     let response = ensure_success(response).await?;
-    let body = response.text().await.map_err(TransportError::Transport)?;
+    let body = read_body_text(response).await?;
     parse_body(body)
 }
 
@@ -193,5 +247,47 @@ mod tests {
     fn parse_body_deserializes_valid_json() {
         let value = parse_body::<serde_json::Value>(r#"{"x":7}"#.to_owned()).unwrap();
         assert_eq!(value["x"], 7);
+    }
+
+    #[test]
+    fn append_capped_accepts_up_to_limit() {
+        let mut buf = Vec::new();
+        // Exactly at the limit is allowed: the bound is strict-greater.
+        let fill = vec![0u8; 16];
+        append_capped(&mut buf, &fill, 16).unwrap();
+        assert_eq!(buf.len(), 16);
+    }
+
+    #[test]
+    fn append_capped_rejects_overflow_without_appending() {
+        let mut buf = Vec::new();
+        let limit = 16;
+        // Fill exactly to the limit.
+        let fill = vec![0u8; limit];
+        append_capped(&mut buf, &fill, limit).unwrap();
+        // One more byte overflows.
+        let err = append_capped(&mut buf, &[1], limit).unwrap_err();
+        assert!(
+            matches!(err, TransportError::BodyTooLarge { limit: 16 }),
+            "overflow must surface as BodyTooLarge, got {err:?}"
+        );
+        // The overflowing chunk must NOT have been appended.
+        assert_eq!(buf.len(), limit);
+        assert!(!buf.contains(&1));
+    }
+
+    #[test]
+    fn append_capped_rejects_single_oversized_chunk() {
+        let mut buf = Vec::new();
+        let oversized = vec![0u8; 17];
+        let err = append_capped(&mut buf, &oversized, 16).unwrap_err();
+        assert!(
+            matches!(err, TransportError::BodyTooLarge { limit: 16 }),
+            "first-chunk overflow must surface as BodyTooLarge, got {err:?}"
+        );
+        assert!(
+            buf.is_empty(),
+            "buffer must stay empty when the first chunk overflows"
+        );
     }
 }

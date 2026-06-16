@@ -257,3 +257,47 @@ async fn lists_models_via_injected_http_client() {
     let response = client_with_http(&server).list_models().await.unwrap();
     assert_eq!(response.data[0].id, "gpt-4.1-mini");
 }
+
+#[tokio::test]
+async fn invalid_utf8_body_maps_to_utf8_error() {
+    // A 2xx response whose body is not valid UTF-8 must surface as TransportError::Utf8 — the
+    // capped reader (`read_body_text`) decodes explicitly — rather than as a transport failure
+    // or a misleading deserialization error. Pins the behavior change introduced by bounding the
+    // body read (previously this was a reqwest decode error mapped to TransportError::Transport).
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/models"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_raw(vec![0xFFu8, 0xFE, 0x00], "application/json"),
+        )
+        .mount(&server)
+        .await;
+
+    let error = client(&server).list_models().await.unwrap_err();
+
+    assert!(
+        matches!(error, Error::Transport(TransportError::Utf8(_))),
+        "invalid-UTF-8 body must surface as TransportError::Utf8, got {error:?}"
+    );
+}
+
+#[tokio::test]
+async fn oversized_success_body_maps_to_body_too_large() {
+    // A 2xx body larger than the cap must surface as TransportError::BodyTooLarge, not be fed to
+    // the deserializer (which would yield Deserialize) or silently accepted. Pins the
+    // success-body overflow path end-to-end through parse_json.
+    let server = MockServer::start().await;
+    let big = vec![b'a'; 9 * 1024 * 1024]; // 9 MiB > 8 MiB cap
+    Mock::given(method("GET"))
+        .and(path("/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(big, "application/json"))
+        .mount(&server)
+        .await;
+
+    let error = client(&server).list_models().await.unwrap_err();
+
+    assert!(
+        matches!(error, Error::Transport(TransportError::BodyTooLarge { .. })),
+        "oversized success body must surface as BodyTooLarge, got {error:?}"
+    );
+}
