@@ -694,7 +694,7 @@ dependencies = [
 
 [[package]]
 name = "just-common"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-stream",
  "futures-core",
@@ -707,7 +707,7 @@ dependencies = [
 
 [[package]]
 name = "just-deepseek"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "dotenvy",
  "futures-core",
@@ -722,7 +722,7 @@ dependencies = [
 
 [[package]]
 name = "just-llm-client"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -742,7 +742,7 @@ dependencies = [
 
 [[package]]
 name = "just-openai-compat"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "dotenvy",
  "futures-core",

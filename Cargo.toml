@@ -18,11 +18,11 @@ rust-version = "1.86"
 name = "just-agent-libs"
 
 [workspace.dependencies]
-just-common = { path = "crates/just-common", version = "0.1.0" }
-just-llm-client = { path = "crates/just-llm-client", version = "0.1.0" }
+just-common = { path = "crates/just-common", version = "0.2.0" }
+just-llm-client = { path = "crates/just-llm-client", version = "0.2.0" }
 # Providers
-just-deepseek = { path = "crates/providers/just-deepseek", version = "0.1.0" }
-just-openai-compat = { path = "crates/providers/just-openai-compat", version = "0.1.0" }
+just-deepseek = { path = "crates/providers/just-deepseek", version = "0.2.0" }
+just-openai-compat = { path = "crates/providers/just-openai-compat", version = "0.2.0" }
 
 anyhow = "1.0.102"
 async-trait = "0.1.89"
