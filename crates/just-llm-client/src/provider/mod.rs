@@ -45,8 +45,10 @@ pub use openai_compat::OpenAiCompatBackend;
 ///
 /// Use [`prepare`](LlmBackend::prepare) (or [`prepare_streaming`](LlmBackend::prepare_streaming))
 /// to obtain a `reqwest::Request`, then [`send`](LlmBackend::send) to execute it. The returned
-/// `reqwest::Request` is `Send + Sync + Clone`: store it, clone it for retry, or send it across
-/// threads. [`send`](LlmBackend::send) returns the raw `reqwest::Response` without checking status,
+/// `reqwest::Request` is `Send + Sync`; it has no `Clone` impl, but
+/// [`Request::try_clone`](reqwest::Request::try_clone) returns `Some` for the buffered-JSON bodies
+/// the built-in backends produce, so callers can store one prepared request and re-send a clone on
+/// retry. [`send`](LlmBackend::send) returns the raw `reqwest::Response` without checking status,
 /// so headers like `retry-after` and `x-ratelimit-*` are readable before the body is consumed.
 /// Finally [`parse`](LlmBackend::parse) (or [`parse_streaming`](LlmBackend::parse_streaming))
 /// deserializes the response into a normalized type, dispatched to the right backend through the
@@ -54,12 +56,12 @@ pub use openai_compat::OpenAiCompatBackend;
 ///
 /// ```ignore
 /// let prepared = backend.prepare(req)?;
-/// // The prepared request is Clone; keep a copy for retry.
-/// let response = backend.send(prepared.clone()).await?;
+/// // Re-send a clone on each attempt (bodies are buffered bytes, so try_clone succeeds).
+/// let response = backend.send(prepared.try_clone().expect("buffered body")).await?;
 /// // Inspect status / headers before consuming the body.
 /// let retry_after = response.headers().get("retry-after");
 /// if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
-///     // back off, then re-send the cloned `prepared` ...
+///     // back off, then re-send a fresh clone of `prepared` ...
 /// }
 /// // Deserialize with the right backend (dyn dispatch on `self`).
 /// let completion = backend.parse(response).await?;
@@ -101,7 +103,7 @@ pub trait LlmBackend: Identifiable + CapabilityNegotiation + Send + Sync {
     ///
     /// Pair with [`prepare`](LlmBackend::prepare) + [`send`](LlmBackend::send) when you need
     /// the raw response in hand, e.g. to inspect `retry-after` / `x-ratelimit-*` headers, or
-    /// to clone the prepared request for retry, before deserializing.
+    /// to re-send a clone of the prepared request (via try_clone) for retry, before deserializing.
     async fn parse(
         &self,
         response: reqwest::Response,

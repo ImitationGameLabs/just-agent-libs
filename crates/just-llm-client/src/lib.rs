@@ -28,9 +28,9 @@
 //! response, including headers like `retry-after` and `x-ratelimit-*`, before deserializing:
 //!
 //! ```ignore
-//! let prepared = backend.prepare(request)?;          // reqwest::Request (Clone)
+//! let prepared = backend.prepare(request)?;          // reqwest::Request (Send + Sync; try_clone-able)
 //! let response = backend.send(prepared).await?;       // raw reqwest::Response, status unchecked
-//! // Inspect status / headers (retry-after, x-ratelimit-*) here, or clone `prepared` for retry.
+//! // Inspect status / headers (retry-after, x-ratelimit-*) here, or re-send a clone of `prepared` (via try_clone) for retry.
 //! let retry_after = response.headers().get("retry-after");
 //! let completion = backend.parse(response).await?;    // deserialized via dyn dispatch
 //! ```
