@@ -16,9 +16,7 @@ AI Agent working guide. This document provides code structure and decision rules
 ├── docs/                  # Project documentation
 └── nix/
       ├── common.nix       # Core config (crate paths, dependencies)
-      └── dev/
-            ├── shell.nix  # Development environment
-            └── checks.nix # CI checks
+      └── checks.nix       # CI checks
 ```
 
 ## Common Tasks
