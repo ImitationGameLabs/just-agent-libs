@@ -340,8 +340,9 @@ impl Conversation {
         validate_append_tools(&delta, &anchor.last_assistant)?;
 
         request.messages = delta;
-        request.tools = None;
-        request.tool_choice = None;
+        // Tools and tool_choice stay as the caller sent them: the settings fingerprint above
+        // already guarantees they match the anchor, and the stored prefix does not inherit
+        // request parameters such as the tool set.
         request.previous_response_id = Some(anchor.previous_response_id.clone());
         Ok(request)
     }
@@ -547,7 +548,10 @@ mod tests {
     use crate::{
         capability::Identifiable,
         error::BackendConstructError,
-        types::generation::{FinishReason, ToolCallDelta, ToolDefinition},
+        types::generation::{
+            FinishReason, FunctionDefinition, ToolCallDelta, ToolChoice, ToolChoiceMode,
+            ToolDefinition, ToolType,
+        },
     };
 
     struct MockBackend {
@@ -755,6 +759,44 @@ mod tests {
         assert_eq!(requests[1].previous_response_id.as_deref(), Some("r1"));
         assert_eq!(requests[1].store, Some(true));
         assert_eq!(requests[1].messages, vec![Message::user("q2")]);
+    }
+
+    #[tokio::test]
+    async fn append_delta_carries_tools_and_tool_choice() {
+        let backend = Arc::new(MockBackend::new(true));
+        backend.queue_response(MockBackend::response("r1", MockBackend::assistant("a1")));
+        backend.queue_response(MockBackend::response("r2", MockBackend::assistant("a2")));
+        let mut conv = Conversation::new(backend.clone());
+
+        let tools = vec![ToolDefinition {
+            kind: ToolType::Function,
+            function: FunctionDefinition {
+                name: "get_weather".to_owned(),
+                description: None,
+                parameters: None,
+                strict: None,
+            },
+        }];
+        let request = GenerationRequest::new("mock", vec![Message::user("q1")])
+            .with_tools(tools.clone())
+            .with_tool_choice(ToolChoice::Mode(ToolChoiceMode::Auto));
+        conv.generate(request).await.unwrap();
+
+        let mirror = conv.last_message().unwrap();
+        let m2 = vec![Message::user("q1"), mirror, Message::user("q2")];
+        let request = GenerationRequest::new("mock", m2)
+            .with_tools(tools.clone())
+            .with_tool_choice(ToolChoice::Mode(ToolChoiceMode::Auto));
+        conv.generate(request).await.unwrap();
+
+        let requests = backend.take_requests();
+        assert_eq!(requests[1].previous_response_id.as_deref(), Some("r1"));
+        // The delta keeps the caller's tools: the model cannot use a tool the wire request omits.
+        assert_eq!(requests[1].tools.as_deref(), Some(tools.as_slice()));
+        assert_eq!(
+            requests[1].tool_choice,
+            Some(ToolChoice::Mode(ToolChoiceMode::Auto))
+        );
     }
 
     #[tokio::test]
