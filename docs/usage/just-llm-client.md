@@ -133,14 +133,15 @@ payload:
   previous assistant turn via `Conversation::last_message`); only `delta` is sent, plus
   `previous_response_id`.
 - **Anything else** — trimming, rewriting, a changed generation setting (model, tools, sampling,
-  reasoning, response format), or an unknown anchor after an abandoned stream; the full request is
-  sent and re-anchors the chain.
+  reasoning, response format); the full request is sent and re-anchors the chain.
 
 On stateless backends (chat completions, Anthropic) the same code degrades to a full-resend replay,
 so one code path works across all families. Stateful chaining requires the `responses` feature;
 `Conversation::is_stateful()` reports whether the effective mode is stateful. Streaming turns are
 covered too: `Conversation::stream_generate` returns a `ConversationStream` that assembles the
-assistant message from the events and adopts it as the anchor once the stream reaches its `End`.
+assistant message; consume it to `End`, take the response with `into_response`, and pass it to
+`Conversation::adopt` to anchor the turn. `into_response` returns `None` for an unconsumed stream
+or a turn that carries no id; such a turn is not adopted and the previous anchor remains valid.
 Configure the HTTP client with `connect_timeout` + `read_timeout` rather than a single `timeout`
 so long streams are not aborted mid-flight; see [timeouts](timeouts.md).
 

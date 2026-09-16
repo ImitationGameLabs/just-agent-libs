@@ -24,26 +24,32 @@
 //!   across a chain; changing any of them is treated as a rewrite and forces a stateless send.
 //! - The two request fields [`previous_response_id`](crate::types::generation::GenerationRequest::previous_response_id)
 //!   and [`store`](crate::types::generation::GenerationRequest::store) are owned by the
-//!   [`Conversation`]; callers do not set them directly.
+//!   [`Conversation`]; [`Conversation::prepare`] and
+//!   [`Conversation::prepare_streaming`](Conversation::prepare_streaming) write them into the
+//!   wire payload, and callers must not set them directly.
 //! - `store` (default `true`) is required for chaining: `with_store(false)` makes every turn a
 //!   plain stateless send.
 //!
 //! # Streaming
 //!
 //! [`Conversation::stream_generate`] returns a [`ConversationStream`] that forwards every event
-//! unchanged while assembling the assistant message from the deltas. On the terminal `End` event
-//! the stream records the assembled message plus the response id; the next turn adopts them as the
-//! new anchor. A stream that never reaches `End` (dropped, or cut short by an error) leaves the
-//! anchor unadopted, so the following turn goes stateless.
+//! unchanged while assembling the assistant message from the deltas. Recording the turn is
+//! explicit: consume the stream through its terminal `End` event, take the assembled response
+//! with `into_response`, and pass it to [`Conversation::adopt`]. A stream that never reaches
+//! `End`, whether dropped or cut short by an error, leaves nothing to adopt, so the previous
+//! anchor stays valid and the next turn continues from it.
+//!
+//! # Failures
+//!
+//! A failed turn never touches the anchor: the previous successful turn's stored response and id
+//! remain valid server-side, so the next turn keeps delta continuation. If the provider's stored
+//! context expires (for example past a retention window), delta continuation keeps failing until
+//! the caller rebuilds the conversation or disables storage with [`Conversation::with_store`];
+//! the library never silently falls back and hides the loss.
 
-use std::{
-    collections::HashSet,
-    fmt,
-    sync::{Arc, Mutex},
-};
+use std::{collections::HashSet, fmt, sync::Arc};
 
 pub use super::assembly::ConversationStream;
-use super::assembly::StreamState;
 use crate::{
     BackendError,
     provider::LlmBackend,
@@ -59,7 +65,7 @@ use crate::{
 /// `previous_response_id`/`store`.
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct Settings {
-    model: String,
+    pub(super) model: String,
     tools: Option<Vec<ToolDefinition>>,
     tool_choice: Option<ToolChoice>,
     temperature: Option<f32>,
@@ -105,18 +111,6 @@ struct Anchor {
     previous_response_id: String,
 }
 
-/// Capture written by a completed [`ConversationStream`] and adopted on the next turn.
-///
-/// `response_id` is `None` on stateless backends, whose `End` events carry no id; such captures
-/// surface the assembled message via [`Conversation::last_message`] but are never adopted as an
-/// anchor.
-pub(super) struct StreamCapture {
-    pub(super) settings: Settings,
-    pub(super) messages: Vec<Message>,
-    pub(super) assistant: AssistantMessage,
-    pub(super) response_id: Option<String>,
-}
-
 /// Stateful conversation continuation on Responses-family backends.
 ///
 /// Construct via [`GenerationClient::conversation`](crate::GenerationClient::conversation). The
@@ -126,7 +120,7 @@ pub struct Conversation {
     backend: Arc<dyn LlmBackend>,
     store: bool,
     anchor: Option<Anchor>,
-    stream_slot: Arc<Mutex<Option<StreamCapture>>>,
+    memo: Option<GenerationRequest>,
 }
 
 impl Conversation {
@@ -136,7 +130,7 @@ impl Conversation {
             backend,
             store: true,
             anchor: None,
-            stream_slot: Arc::new(Mutex::new(None)),
+            memo: None,
         }
     }
 
@@ -158,119 +152,127 @@ impl Conversation {
         self.store && self.backend.supports_stateful_conversation()
     }
 
-    /// The assistant message of the last completed turn.
+    /// The assistant message of the last settled turn.
     ///
-    /// Non-streaming turns return the parsed `response.message`; streamed turns return the message
-    /// assembled from the events (available once the stream has been consumed through its `End`
-    /// event). Mirror this verbatim into the next turn's message list so the anchor can be
-    /// recognized.
+    /// Non-streaming turns settle when [`generate`](Self::generate) returns; streamed turns
+    /// settle at [`adopt`](Self::adopt). Until a streamed turn is adopted, this keeps reporting
+    /// the previous settled turn: the in-flight stream's assembled message is available from
+    /// `into_response` on the stream itself. Mirror the settled turn verbatim into the next
+    /// turn's message list so the anchor can be recognized.
     pub fn last_message(&self) -> Option<Message> {
-        if let Ok(slot) = self.stream_slot.lock() {
-            if let Some(capture) = slot.as_ref() {
-                return Some(Message::Assistant(capture.assistant.clone()));
-            }
-        }
         self.anchor
             .as_ref()
             .map(|anchor| Message::Assistant(anchor.last_assistant.clone()))
     }
 
-    /// Executes a non-streaming generation turn.
+    /// Judges the turn and renders the wire request without sending it.
+    ///
+    /// On success the request is recorded as the memo that the next [`adopt`](Self::adopt) pairs
+    /// against; every successful call overwrites the memo, so adopt always pairs with the most
+    /// recent prepare. The returned [`reqwest::Request`] is a plain HTTP request: the caller may
+    /// add or rewrite headers (tracing, gateway routing) but must send the body verbatim, since
+    /// it carries the judgment result, including the conversation-owned `previous_response_id`
+    /// and `store`. To resend for a retry, clone it with [`reqwest::Request::try_clone`]. A
+    /// failed prepare writes nothing: memo and anchor are untouched.
+    pub fn prepare(
+        &mut self,
+        request: GenerationRequest,
+    ) -> Result<reqwest::Request, BackendError> {
+        let snapshot = request.clone();
+        validate_tool_results(&request.messages)?;
+        let wire = self.wire_request(request)?;
+        let prepared = self.backend.prepare(wire)?;
+        self.memo = Some(snapshot);
+        Ok(prepared)
+    }
+
+    /// Judges a streaming turn and renders the SSE wire request without opening a stream.
+    ///
+    /// Same contract as [`prepare`](Self::prepare), except the rendered request asks the backend
+    /// for a streamed response. The memo is recorded here exactly as for `prepare`.
+    pub fn prepare_streaming(
+        &mut self,
+        request: GenerationRequest,
+    ) -> Result<reqwest::Request, BackendError> {
+        let snapshot = request.clone();
+        validate_tool_results(&request.messages)?;
+        let wire = self.wire_request(request)?;
+        let prepared = self.backend.prepare_streaming(wire)?;
+        self.memo = Some(snapshot);
+        Ok(prepared)
+    }
+
+    /// Records a completed turn as the new anchor. This is the only method that writes
+    /// the anchor after construction.
+    ///
+    /// Pairing contract: pass the response of the most recent successful
+    /// [`prepare`](Self::prepare), or the response assembled from the stream opened by the most
+    /// recent [`prepare_streaming`](Self::prepare_streaming). Adopting a response produced by an
+    /// earlier prepare cannot be detected here and may chain the conversation to server-side
+    /// context the caller never built. With storage disabled or a stateless backend this is a
+    /// no-op. Adopting without a memo, or a response with an empty id, is an invalid request. Do
+    /// not adopt a failed turn: a turn that is never adopted leaves the previous anchor valid.
+    pub fn adopt(&mut self, response: GenerationResponse) -> Result<(), BackendError> {
+        if !self.is_stateful() {
+            return Ok(());
+        }
+        let memo = self.memo.as_ref().ok_or_else(|| {
+            BackendError::invalid_request(
+                "no prepared request to adopt against; call prepare or prepare_streaming first",
+            )
+        })?;
+        if response.id.is_empty() {
+            return Err(BackendError::invalid_request(
+                "response id is empty; refusing to anchor the conversation on it",
+            ));
+        }
+        self.anchor = Some(Anchor {
+            settings: Settings::from_request(memo),
+            last_input: memo.messages.clone(),
+            last_assistant: response.message,
+            previous_response_id: response.id,
+        });
+        Ok(())
+    }
+
+    /// Executes a non-streaming generation turn: prepare, send, parse, adopt.
     ///
     /// On a stateful backend, a pure append to the previous turn is sent as `previous_response_id`
-    /// plus only the new messages; anything else is sent as a full request.
+    /// plus only the new messages; anything else is sent as a full request. A failed turn keeps
+    /// the anchor: the next turn retries the delta against the same stored context.
     ///
-    /// This is the convenience path for simple turns: it validates the request, manages the
-    /// continuation anchor, and returns a parsed [`GenerationResponse`]. Response headers and
-    /// the raw body are not exposed. For retries keyed on `Retry-After`, header inspection,
-    /// or custom status handling, hold a backend handle and use the three-step trait methods
-    /// [`prepare`](LlmBackend::prepare) / [`send`](LlmBackend::send) / [`parse`](LlmBackend::parse)
-    /// directly; they are defined on [`LlmBackend`], not on `Conversation`.
+    /// This is the convenience path: it returns a parsed [`GenerationResponse`] and does not
+    /// expose response headers or the raw body. For header-aware retries or custom status
+    /// handling, drive [`prepare`](Self::prepare) / [`send`](LlmBackend::send) /
+    /// [`parse`](LlmBackend::parse) / [`adopt`](Self::adopt) yourself.
     pub async fn generate(
         &mut self,
         request: GenerationRequest,
     ) -> Result<GenerationResponse, BackendError> {
-        self.adopt_pending_stream();
-        validate_tool_results(&request.messages)?;
-
-        let settings = Settings::from_request(&request);
-        let last_input = request.messages.clone();
-        let wire_request = self.wire_request(request)?;
-
-        match self.backend.generate(wire_request).await {
-            Ok(response) => {
-                self.record_anchor(settings, last_input, &response);
-                Ok(response)
-            }
-            Err(error) => {
-                self.clear_anchor();
-                Err(error)
-            }
-        }
+        let prepared = self.prepare(request)?;
+        let raw = self.backend.send(prepared).await?;
+        let response = self.backend.parse(raw).await?;
+        self.adopt(response.clone())?;
+        Ok(response)
     }
 
-    /// Executes a streaming generation turn.
+    /// Executes a streaming generation turn: prepare_streaming, send, parse_streaming.
     ///
-    /// The returned [`ConversationStream`] forwards events unchanged and, once consumed through its
-    /// terminal `End` event, records the assembled assistant message and response id for the next
-    /// turn to adopt.
-    ///
-    /// As with [`generate`](Self::generate), this is the convenience path: response headers and
-    /// the raw body are not exposed. For header-aware retries or custom status handling,
-    /// use the three-step trait methods [`prepare_streaming`](LlmBackend::prepare_streaming) /
-    /// [`send`](LlmBackend::send) / [`parse_streaming`](LlmBackend::parse_streaming) directly.
+    /// The returned [`ConversationStream`] forwards events unchanged while assembling the
+    /// assistant message. Recording the turn is explicit: consume the stream through its terminal
+    /// `End` event, take the assembled response with
+    /// `into_response`, and pass it to
+    /// [`adopt`](Self::adopt). Until then [`last_message`](Self::last_message) keeps reporting
+    /// the previous settled turn.
     pub async fn stream_generate(
         &mut self,
         request: GenerationRequest,
     ) -> Result<ConversationStream, BackendError> {
-        self.adopt_pending_stream();
-        validate_tool_results(&request.messages)?;
-
         let settings = Settings::from_request(&request);
-        let last_input = request.messages.clone();
-        let wire_request = self.wire_request(request)?;
-
-        let inner = match self.backend.stream_generate(wire_request).await {
-            Ok(stream) => stream,
-            Err(error) => {
-                self.clear_anchor();
-                return Err(error);
-            }
-        };
-
-        Ok(ConversationStream {
-            inner,
-            state: Arc::new(Mutex::new(StreamState {
-                settings: Some(settings),
-                messages: last_input,
-                content: String::new(),
-                reasoning: String::new(),
-                tool_calls: Vec::new(),
-            })),
-            slot: self.stream_slot.clone(),
-        })
-    }
-
-    /// Adopts a completed streamed turn as the anchor (lazily, on the next call).
-    ///
-    /// A capture without a response id (stateless backend) is discarded: it carries no continuation
-    /// handle, so the previous anchor, if any, stays valid.
-    fn adopt_pending_stream(&mut self) {
-        let Ok(mut slot) = self.stream_slot.lock() else {
-            return;
-        };
-        let Some(capture) = slot.take() else {
-            return;
-        };
-        let Some(response_id) = capture.response_id else {
-            return;
-        };
-        self.anchor = Some(Anchor {
-            settings: capture.settings,
-            last_input: capture.messages,
-            last_assistant: capture.assistant,
-            previous_response_id: response_id,
-        });
+        let prepared = self.prepare_streaming(request)?;
+        let raw = self.backend.send(prepared).await?;
+        let inner = self.backend.parse_streaming(raw).await?;
+        Ok(ConversationStream::new(inner, settings))
     }
 
     /// Builds the wire request: full send, delta continuation, or a stateless re-anchor.
@@ -322,24 +324,6 @@ impl Conversation {
         // request parameters such as the tool set.
         request.previous_response_id = Some(anchor.previous_response_id.clone());
         Ok(request)
-    }
-
-    fn record_anchor(
-        &mut self,
-        settings: Settings,
-        last_input: Vec<Message>,
-        response: &GenerationResponse,
-    ) {
-        self.anchor = Some(Anchor {
-            settings,
-            last_input,
-            last_assistant: response.message.clone(),
-            previous_response_id: response.id.clone(),
-        });
-    }
-
-    fn clear_anchor(&mut self) {
-        self.anchor = None;
     }
 }
 
@@ -420,7 +404,7 @@ mod tests {
         error::BackendConstructError,
         types::generation::{
             FinishReason, FunctionDefinition, GenerationEvent, ToolCall, ToolCallDelta, ToolChoice,
-            ToolChoiceMode, ToolDefinition, ToolType,
+            ToolChoiceMode, ToolDefinition, ToolType, Usage,
         },
     };
 
@@ -429,6 +413,7 @@ mod tests {
         requests: Mutex<Vec<GenerationRequest>>,
         responses: Mutex<VecDeque<Result<GenerationResponse, BackendError>>>,
         streams: Mutex<VecDeque<Vec<GenerationEvent>>>,
+        send_script: Mutex<VecDeque<Result<(), BackendError>>>,
     }
 
     impl MockBackend {
@@ -438,6 +423,7 @@ mod tests {
                 requests: Mutex::new(Vec::new()),
                 responses: Mutex::new(VecDeque::new()),
                 streams: Mutex::new(VecDeque::new()),
+                send_script: Mutex::new(VecDeque::new()),
             }
         }
 
@@ -474,6 +460,21 @@ mod tests {
         fn queue_stream(&self, events: Vec<GenerationEvent>) {
             self.streams.lock().unwrap().push_back(events);
         }
+
+        fn queue_send_error(&self, error: BackendError) {
+            self.send_script.lock().unwrap().push_back(Err(error));
+        }
+
+        fn dummy_request(&self) -> reqwest::Request {
+            reqwest::Request::new(
+                reqwest::Method::POST,
+                "http://mock.local/".parse().expect("valid mock url"),
+            )
+        }
+
+        fn dummy_response() -> reqwest::Response {
+            reqwest::Response::from(http::Response::new(""))
+        }
     }
 
     impl Identifiable for MockBackend {
@@ -490,43 +491,33 @@ mod tests {
 
     #[async_trait]
     impl LlmBackend for MockBackend {
-        fn prepare(&self, _request: GenerationRequest) -> Result<reqwest::Request, BackendError> {
-            unimplemented!("not exercised by tests")
+        fn prepare(&self, request: GenerationRequest) -> Result<reqwest::Request, BackendError> {
+            self.requests.lock().unwrap().push(request);
+            Ok(self.dummy_request())
         }
 
         fn prepare_streaming(
             &self,
-            _request: GenerationRequest,
+            request: GenerationRequest,
         ) -> Result<reqwest::Request, BackendError> {
-            unimplemented!("not exercised by tests")
+            self.requests.lock().unwrap().push(request);
+            Ok(self.dummy_request())
         }
 
         async fn send(
             &self,
             _prepared: reqwest::Request,
         ) -> Result<reqwest::Response, BackendError> {
-            unimplemented!("not exercised by tests")
+            match self.send_script.lock().unwrap().pop_front() {
+                Some(Err(error)) => Err(error),
+                _ => Ok(Self::dummy_response()),
+            }
         }
 
         async fn parse(
             &self,
             _response: reqwest::Response,
         ) -> Result<GenerationResponse, BackendError> {
-            unimplemented!("not exercised by tests")
-        }
-
-        async fn parse_streaming(
-            &self,
-            _response: reqwest::Response,
-        ) -> Result<GenerationStream, BackendError> {
-            unimplemented!("not exercised by tests")
-        }
-
-        async fn generate(
-            &self,
-            request: GenerationRequest,
-        ) -> Result<GenerationResponse, BackendError> {
-            self.requests.lock().unwrap().push(request);
             self.responses
                 .lock()
                 .unwrap()
@@ -534,11 +525,10 @@ mod tests {
                 .expect("no response queued for mock backend")
         }
 
-        async fn stream_generate(
+        async fn parse_streaming(
             &self,
-            request: GenerationRequest,
+            _response: reqwest::Response,
         ) -> Result<GenerationStream, BackendError> {
-            self.requests.lock().unwrap().push(request);
             let events = self
                 .streams
                 .lock()
@@ -883,7 +873,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn error_clears_anchor_and_next_turn_reanchors() {
+    async fn failed_turn_keeps_anchor_and_next_turn_continues_delta() {
         let backend = Arc::new(MockBackend::new(true));
         backend.queue_response(MockBackend::response("r1", MockBackend::assistant("a1")));
         backend.queue_error(BackendError::provider(
@@ -909,21 +899,21 @@ mod tests {
             .is_err()
         );
 
-        // After the error the anchor is gone: the next turn is a full re-anchoring send.
+        // The anchor survives the failed turn: the next turn still chains from r1 as a delta.
         let m3 = vec![
             Message::user("q1"),
             Message::assistant("a1"),
             Message::user("q3"),
         ];
-        conv.generate(GenerationRequest::new("mock", m3.clone()))
+        conv.generate(GenerationRequest::new("mock", m3))
             .await
             .unwrap();
 
         let requests = backend.take_requests();
         assert_eq!(requests.len(), 3);
-        assert!(requests[1].previous_response_id.is_some());
-        assert!(requests[2].previous_response_id.is_none());
-        assert_eq!(requests[2].messages, m3);
+        assert_eq!(requests[1].previous_response_id.as_deref(), Some("r1"));
+        assert_eq!(requests[2].previous_response_id.as_deref(), Some("r1"));
+        assert_eq!(requests[2].messages, vec![Message::user("q3")]);
     }
 
     #[tokio::test]
@@ -960,23 +950,26 @@ mod tests {
         backend.queue_response(MockBackend::response("r2", MockBackend::assistant("a2")));
         let mut conv = Conversation::new(backend.clone());
 
-        let stream = conv
+        let mut stream = conv
             .stream_generate(GenerationRequest::new("mock", vec![Message::user("q1")]))
             .await
             .unwrap();
         let mut events = Vec::new();
-        let mut stream = Box::pin(stream);
         while let Some(event) = stream.next().await {
             events.push(event.unwrap());
         }
         assert_eq!(events.len(), 5);
 
-        // The assembled message is available before the next turn adopts it.
-        let mirror = conv.last_message().unwrap();
+        // The assembled response carries the turn's identity and message until adopt records it.
+        let response = stream.into_response().expect("End carried a response id");
+        assert_eq!(response.id, "rs_1");
+        assert_eq!(response.finish_reason, Some(FinishReason::Stop));
+        let mirror = Message::Assistant(response.message.clone());
         assert_eq!(mirror.content(), Some("The answer is 42."));
         assert_eq!(mirror.tool_calls().len(), 1);
         assert_eq!(mirror.tool_calls()[0].name, "get_weather");
         assert_eq!(mirror.tool_calls()[0].arguments, r#"{"city":"Paris"}"#);
+        conv.adopt(response).unwrap();
 
         let m2 = vec![Message::user("q1"), mirror, Message::user("q2")];
         conv.generate(GenerationRequest::new("mock", m2))
@@ -1005,13 +998,14 @@ mod tests {
             .await
             .unwrap();
 
-        // Start a streamed turn that cannot be recognized as an append, but never poll it to its
-        // terminal event, so it never adopts an anchor.
-        let _dropped = conv
+        // Start a streamed turn that cannot be recognized as an append, and abandon it before
+        // its terminal event: `into_response` yields nothing, so nothing is adopted and the
+        // anchor from r1 stays valid.
+        let stream = conv
             .stream_generate(GenerationRequest::new("mock", vec![Message::user("q2")]))
             .await
             .unwrap();
-
+        assert!(stream.into_response().is_none());
         // The abandoned turn's wire request went out stateless, and the next turn still chains
         // from the last completed anchor (r1) since nothing adopted the stream.
         let m3 = vec![
@@ -1046,7 +1040,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn streamed_last_message_works_on_stateless_backend() {
+    async fn stateless_stream_yields_no_adoptable_response() {
         let backend = Arc::new(MockBackend::new(false));
         backend.queue_stream(vec![
             GenerationEvent::Text {
@@ -1059,14 +1053,375 @@ mod tests {
         ]);
         let mut conv = Conversation::new(backend.clone());
 
-        let mut stream = Box::pin(
-            conv.stream_generate(GenerationRequest::new("mock", vec![Message::user("q1")]))
-                .await
-                .unwrap(),
-        );
+        let mut stream = conv
+            .stream_generate(GenerationRequest::new("mock", vec![Message::user("q1")]))
+            .await
+            .unwrap();
         while stream.next().await.is_some() {}
 
-        // The assembled message is available even though a stateless backend can never chain.
-        assert_eq!(conv.last_message().unwrap().content(), Some("hi"));
+        // A stateless backend's End carries no id, so there is nothing to adopt, and the
+        // never-adopted turn does not show up in last_message.
+        assert!(stream.into_response().is_none());
+        assert!(conv.last_message().is_none());
+    }
+
+    #[tokio::test]
+    async fn adopt_without_prepare_is_rejected() {
+        let backend = Arc::new(MockBackend::new(true));
+        let mut conv = Conversation::new(backend);
+
+        let error = conv
+            .adopt(MockBackend::response("r1", MockBackend::assistant("a1")))
+            .unwrap_err();
+        assert!(matches!(error, BackendError::InvalidRequest(_)));
+    }
+
+    #[tokio::test]
+    async fn adopt_rejects_empty_response_id() {
+        let backend = Arc::new(MockBackend::new(true));
+        let mut conv = Conversation::new(backend);
+        conv.prepare(GenerationRequest::new("mock", vec![Message::user("q1")]))
+            .unwrap();
+
+        let error = conv
+            .adopt(MockBackend::response("", MockBackend::assistant("a1")))
+            .unwrap_err();
+        assert!(matches!(error, BackendError::InvalidRequest(_)));
+    }
+
+    #[tokio::test]
+    async fn adopt_on_stateless_backend_is_noop() {
+        let backend = Arc::new(MockBackend::new(false));
+        backend.queue_response(MockBackend::response("r1", MockBackend::assistant("a1")));
+        let mut conv = Conversation::new(backend.clone());
+
+        conv.adopt(MockBackend::response("r0", MockBackend::assistant("a0")))
+            .unwrap();
+        conv.generate(GenerationRequest::new(
+            "mock",
+            vec![
+                Message::user("q1"),
+                Message::assistant("a1"),
+                Message::user("q2"),
+            ],
+        ))
+        .await
+        .unwrap();
+
+        let requests = backend.take_requests();
+        assert_eq!(requests.len(), 1);
+        assert!(requests[0].previous_response_id.is_none());
+        assert!(requests[0].store.is_none());
+    }
+
+    #[tokio::test]
+    async fn failed_prepare_leaves_state_untouched() {
+        let backend = Arc::new(MockBackend::new(true));
+        backend.queue_response(MockBackend::response("r1", MockBackend::assistant("a1")));
+        backend.queue_response(MockBackend::response("r2", MockBackend::assistant("a2")));
+        let mut conv = Conversation::new(backend.clone());
+
+        let error = conv
+            .prepare(GenerationRequest::new(
+                "mock",
+                vec![Message::tool("25C", "call_missing")],
+            ))
+            .unwrap_err();
+        assert!(matches!(error, BackendError::InvalidRequest(_)));
+        assert!(backend.take_requests().is_empty());
+
+        let prepared = conv
+            .prepare(GenerationRequest::new("mock", vec![Message::user("q1")]))
+            .unwrap();
+        let raw = backend.send(prepared).await.unwrap();
+        conv.adopt(backend.parse(raw).await.unwrap()).unwrap();
+
+        let mirror = conv.last_message().unwrap();
+        let m2 = vec![Message::user("q1"), mirror, Message::user("q2")];
+        conv.generate(GenerationRequest::new("mock", m2))
+            .await
+            .unwrap();
+
+        let requests = backend.take_requests();
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[1].previous_response_id.as_deref(), Some("r1"));
+        assert_eq!(requests[1].messages, vec![Message::user("q2")]);
+    }
+
+    #[tokio::test]
+    async fn reprepare_overwrites_memo() {
+        let backend = Arc::new(MockBackend::new(true));
+        backend.queue_response(MockBackend::response("r2", MockBackend::assistant("a2")));
+        backend.queue_response(MockBackend::response("r3", MockBackend::assistant("a3")));
+        let mut conv = Conversation::new(backend.clone());
+
+        conv.prepare(GenerationRequest::new("mock", vec![Message::user("q1")]))
+            .unwrap();
+        // The second prepare overwrites the memo, so adopt pairs with this request.
+        let prepared = conv
+            .prepare(GenerationRequest::new("mock", vec![Message::user("q9")]))
+            .unwrap();
+        let raw = backend.send(prepared).await.unwrap();
+        conv.adopt(backend.parse(raw).await.unwrap()).unwrap();
+
+        let m2 = vec![
+            Message::user("q9"),
+            Message::assistant("a2"),
+            Message::user("q10"),
+        ];
+        conv.generate(GenerationRequest::new("mock", m2))
+            .await
+            .unwrap();
+
+        let requests = backend.take_requests();
+        assert_eq!(requests.len(), 3);
+        assert_eq!(requests[2].previous_response_id.as_deref(), Some("r2"));
+        assert_eq!(requests[2].messages, vec![Message::user("q10")]);
+    }
+
+    #[tokio::test]
+    async fn retry_with_try_clone_adopts_after_send_failure() {
+        let backend = Arc::new(MockBackend::new(true));
+        backend.queue_response(MockBackend::response("r1", MockBackend::assistant("a1")));
+        backend.queue_response(MockBackend::response("r2", MockBackend::assistant("a2")));
+        backend.queue_send_error(BackendError::provider(
+            "mock",
+            just_common::error::ProviderError::InvalidRequest("boom".to_owned()),
+        ));
+        let mut conv = Conversation::new(backend.clone());
+
+        let prepared = conv
+            .prepare(GenerationRequest::new("mock", vec![Message::user("q1")]))
+            .unwrap();
+
+        // First send fails; the caller resends a clone of the same prepared request and the
+        // turn settles normally.
+        assert!(backend.send(prepared.try_clone().unwrap()).await.is_err());
+        let raw = backend.send(prepared.try_clone().unwrap()).await.unwrap();
+        conv.adopt(backend.parse(raw).await.unwrap()).unwrap();
+
+        let mirror = conv.last_message().unwrap();
+        let m2 = vec![Message::user("q1"), mirror, Message::user("q2")];
+        conv.generate(GenerationRequest::new("mock", m2))
+            .await
+            .unwrap();
+
+        let requests = backend.take_requests();
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[1].previous_response_id.as_deref(), Some("r1"));
+        assert_eq!(requests[1].messages, vec![Message::user("q2")]);
+    }
+
+    #[tokio::test]
+    async fn mismatched_adopt_degrades_to_stateless() {
+        let backend = Arc::new(MockBackend::new(true));
+        backend.queue_response(MockBackend::response("r2", MockBackend::assistant("a2")));
+        let mut conv = Conversation::new(backend.clone());
+
+        conv.prepare(GenerationRequest::new("mock", vec![Message::user("q1")]))
+            .unwrap();
+        // Adopt the response of a different logical turn (the detectable direction of the
+        // pairing contract): the anchor now pairs A's list with B's response.
+        conv.adopt(MockBackend::response("rB", MockBackend::assistant("aB")))
+            .unwrap();
+
+        // The caller's list mirrors B, not the anchor's list: append detection fails and the
+        // turn degrades to a full stateless send instead of erroring or chaining wrongly.
+        let m2 = vec![
+            Message::user("q9"),
+            Message::assistant("aB"),
+            Message::user("q10"),
+        ];
+        conv.generate(GenerationRequest::new("mock", m2.clone()))
+            .await
+            .unwrap();
+
+        let requests = backend.take_requests();
+        assert_eq!(requests.len(), 2);
+        assert!(requests[1].previous_response_id.is_none());
+        assert_eq!(requests[1].messages, m2);
+    }
+
+    #[tokio::test]
+    async fn header_mutation_leaves_wire_body_unchanged() {
+        let backend = Arc::new(MockBackend::new(true));
+        backend.queue_response(MockBackend::response("r1", MockBackend::assistant("a1")));
+        backend.queue_response(MockBackend::response("r2", MockBackend::assistant("a2")));
+        let mut conv = Conversation::new(backend.clone());
+
+        let request = GenerationRequest::new("mock", vec![Message::user("q1")]);
+        let mut mutated = conv.prepare(request).unwrap();
+        mutated.headers_mut().insert(
+            http::HeaderName::from_static("x-trace-id"),
+            http::HeaderValue::from_static("trace-1"),
+        );
+        assert_eq![
+            mutated.headers_mut().get("x-trace-id"),
+            Some(&http::HeaderValue::from_static("trace-1"))
+        ];
+
+        // The mutated copy still flows through send/parse/adopt, and the chain continues.
+        let raw = backend.send(mutated).await.unwrap();
+        conv.adopt(backend.parse(raw).await.unwrap()).unwrap();
+        let mirror = conv.last_message().unwrap();
+        let m2 = vec![Message::user("q1"), mirror, Message::user("q2")];
+        conv.generate(GenerationRequest::new("mock", m2))
+            .await
+            .unwrap();
+        let requests = backend.take_requests();
+        assert_eq!(requests[1].previous_response_id.as_deref(), Some("r1"));
+        assert_eq!(requests[1].messages, vec![Message::user("q2")]);
+    }
+
+    #[tokio::test]
+    async fn into_response_is_none_before_the_end_event() {
+        let backend = Arc::new(MockBackend::new(true));
+        backend.queue_stream(vec![
+            GenerationEvent::Text {
+                delta: "hi".to_owned(),
+            },
+            GenerationEvent::End {
+                finish_reason: Some(FinishReason::Stop),
+                response_id: Some("rs_1".to_owned()),
+            },
+        ]);
+        let mut conv = Conversation::new(backend);
+
+        let mut stream = conv
+            .stream_generate(GenerationRequest::new("mock", vec![Message::user("q1")]))
+            .await
+            .unwrap();
+        assert!(matches!(
+            stream.next().await.unwrap().unwrap(),
+            GenerationEvent::Text { .. }
+        ));
+
+        // The terminal event has not been consumed yet: nothing to adopt.
+        assert!(stream.into_response().is_none());
+    }
+
+    #[tokio::test]
+    async fn last_usage_report_wins() {
+        let backend = Arc::new(MockBackend::new(true));
+        backend.queue_stream(vec![
+            GenerationEvent::Text {
+                delta: "hi".to_owned(),
+            },
+            GenerationEvent::Usage {
+                usage: Usage {
+                    completion_tokens: 7,
+                    prompt_tokens: 11,
+                    cache_read_tokens: None,
+                    cache_write_tokens: None,
+                    total_tokens: 18,
+                    completion_tokens_details: None,
+                },
+            },
+            GenerationEvent::Usage {
+                usage: Usage {
+                    completion_tokens: 5,
+                    prompt_tokens: 100,
+                    cache_read_tokens: None,
+                    cache_write_tokens: None,
+                    total_tokens: 105,
+                    completion_tokens_details: None,
+                },
+            },
+            GenerationEvent::End {
+                finish_reason: Some(FinishReason::Stop),
+                response_id: Some("rs_1".to_owned()),
+            },
+        ]);
+        let mut conv = Conversation::new(backend);
+
+        let mut stream = conv
+            .stream_generate(GenerationRequest::new("mock", vec![Message::user("q1")]))
+            .await
+            .unwrap();
+        while stream.next().await.is_some() {}
+
+        // A late report supersedes the earlier one instead of merging with it.
+        let usage = stream.into_response().unwrap().usage.unwrap();
+        assert_eq!(usage.prompt_tokens, 100);
+        assert_eq!(usage.completion_tokens, 5);
+        assert_eq!(usage.total_tokens, 105);
+    }
+
+    #[tokio::test]
+    async fn assembled_response_carries_all_fields() {
+        let backend = Arc::new(MockBackend::new(true));
+        backend.queue_stream(vec![
+            GenerationEvent::Text {
+                delta: "The answer is ".to_owned(),
+            },
+            GenerationEvent::Reasoning {
+                delta: "thinking".to_owned(),
+            },
+            GenerationEvent::ToolCall {
+                delta: ToolCallDelta {
+                    index: Some(0),
+                    id: Some("call_1".to_owned()),
+                    name: Some("get_weather".to_owned()),
+                    arguments: None,
+                },
+            },
+            GenerationEvent::ToolCall {
+                delta: ToolCallDelta {
+                    index: Some(0),
+                    id: None,
+                    name: None,
+                    arguments: Some(r#"{"city":"Paris"}"#.to_owned()),
+                },
+            },
+            GenerationEvent::ToolCall {
+                delta: ToolCallDelta {
+                    index: Some(1),
+                    id: Some("call_2".to_owned()),
+                    name: None,
+                    arguments: None,
+                },
+            },
+            GenerationEvent::Usage {
+                usage: Usage {
+                    completion_tokens: 7,
+                    prompt_tokens: 11,
+                    cache_read_tokens: None,
+                    cache_write_tokens: None,
+                    total_tokens: 18,
+                    completion_tokens_details: None,
+                },
+            },
+            GenerationEvent::End {
+                finish_reason: Some(FinishReason::Stop),
+                response_id: Some("rs_9".to_owned()),
+            },
+        ]);
+        let mut conv = Conversation::new(backend);
+
+        let mut stream = conv
+            .stream_generate(GenerationRequest::new("mock", vec![Message::user("q1")]))
+            .await
+            .unwrap();
+        while stream.next().await.is_some() {}
+
+        let response = stream.into_response().unwrap();
+        assert_eq!(response.id, "rs_9");
+        assert_eq!(response.model, "mock");
+        assert_eq!(response.finish_reason, Some(FinishReason::Stop));
+        assert_eq!(response.message.content.as_deref(), Some("The answer is "));
+        let reasoning = response.message.reasoning.as_ref().unwrap();
+        assert_eq!(reasoning.text.as_deref(), Some("thinking"));
+        // The nameless call_2 fragment is dropped; call_1 assembles completely.
+        assert_eq!(response.message.tool_calls.len(), 1);
+        assert_eq!(response.message.tool_calls[0].id, "call_1");
+        assert_eq!(
+            response.message.tool_calls[0].arguments,
+            r#"{"city":"Paris"}"#
+        );
+        let usage = response.usage.unwrap();
+        assert_eq!(usage.completion_tokens, 7);
+        assert_eq!(usage.prompt_tokens, 11);
+        assert_eq!(usage.total_tokens, 18);
+        assert_eq!(usage.cache_read_tokens, None);
     }
 }

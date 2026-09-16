@@ -1,57 +1,100 @@
 //! Stream assembly for stateful conversation continuation.
 //!
-//! [`ConversationStream`] forwards the backend event stream unchanged while accumulating the
-//! assistant message from text, reasoning, and tool-call deltas. On the terminal `End` event it
-//! writes the assembled capture into the slot shared with the conversation, which adopts it as
-//! the next turn's anchor. A stream that never reaches `End` writes nothing, leaving the
-//! previous anchor valid.
+//! [`AssemblingStream`] wraps the backend generation event stream, forwards every event
+//! unchanged, and accumulates the assistant message from text, reasoning, and tool-call deltas.
+//! Once the terminal `End` event has been consumed,
+//! [`into_response`](AssemblingStream::into_response) yields the assembled response for the
+//! caller to record with `Conversation::adopt`.
 
 use std::{
     fmt,
     pin::Pin,
-    sync::{Arc, Mutex},
     task::{Context, Poll},
 };
 
 use futures_core::Stream;
 use futures_util::StreamExt;
 
-use super::conversation::{Settings, StreamCapture};
+use super::conversation::Settings;
 use crate::{
     capability::GenerationStream,
-    types::generation::{AssistantMessage, GenerationEvent, Message, Reasoning, ToolCall},
+    types::generation::{
+        AssistantMessage, FinishReason, GenerationEvent, GenerationResponse, Reasoning, ToolCall,
+        Usage,
+    },
 };
 
 /// Stream-side accumulation of the assistant message from normalized events.
-#[derive(Default)]
-pub(super) struct StreamState {
-    pub(super) settings: Option<Settings>,
-    pub(super) messages: Vec<Message>,
-    pub(super) content: String,
-    pub(super) reasoning: String,
-    pub(super) tool_calls: Vec<AccumulatingCall>,
+struct StreamState {
+    settings: Option<Settings>,
+    content: String,
+    reasoning: String,
+    tool_calls: Vec<AccumulatingCall>,
+    finish_reason: Option<FinishReason>,
+    usage: Option<Usage>,
+    response_id: Option<String>,
 }
 
 /// A single in-flight tool call being assembled from `ToolCall` deltas (keyed by `index`).
 #[derive(Default)]
-pub(super) struct AccumulatingCall {
+struct AccumulatingCall {
     id: Option<String>,
     name: Option<String>,
     arguments: String,
 }
 
-/// Streaming wrapper returned by
-/// [`Conversation::stream_generate`](crate::client::conversation::Conversation::stream_generate).
+/// Assembling wrapper around a backend generation event stream.
 ///
-/// Forwards every event unchanged while assembling the assistant message from the deltas; on the
-/// terminal `End` event the assembled message and response id are recorded for the next turn.
-pub struct ConversationStream {
-    pub(super) inner: GenerationStream,
-    pub(super) state: Arc<Mutex<StreamState>>,
-    pub(super) slot: Arc<Mutex<Option<StreamCapture>>>,
+/// Forwards every event unchanged while assembling the assistant message from the deltas.
+/// Consume the stream through its terminal `End` event, then take the assembled response with
+/// [`into_response`](AssemblingStream::into_response): `None` means there is nothing to record,
+/// either because the stream never reached `End`, or because the backend is stateless and the
+/// `End` event carried no response id. Both share the meaning "no adoptable response".
+#[must_use = "a turn is only recorded by consuming the stream to `End` and adopting the response obtained via `into_response`"]
+pub struct AssemblingStream {
+    inner: GenerationStream,
+    state: StreamState,
 }
 
-impl Stream for ConversationStream {
+/// Streaming turn returned by
+/// [`Conversation::stream_generate`](crate::client::conversation::Conversation::stream_generate).
+pub type ConversationStream = AssemblingStream;
+
+impl AssemblingStream {
+    pub(super) fn new(inner: GenerationStream, settings: Settings) -> Self {
+        Self {
+            inner,
+            state: StreamState {
+                settings: Some(settings),
+                content: String::new(),
+                reasoning: String::new(),
+                tool_calls: Vec::new(),
+                finish_reason: None,
+                usage: None,
+                response_id: None,
+            },
+        }
+    }
+
+    /// The assembled response, if the stream reached `End` carrying a response id.
+    ///
+    /// `None` before `End`, and `None` when a stateless backend's `End` event carried no id:
+    /// without an id there is nothing to adopt, so the caller skips `adopt` for that turn.
+    pub fn into_response(self) -> Option<GenerationResponse> {
+        let message = build_assistant(&self.state)?;
+        let response_id = self.state.response_id.clone()?;
+        let model = self.state.settings.as_ref()?.model.clone();
+        Some(GenerationResponse {
+            id: response_id,
+            model,
+            message,
+            finish_reason: self.state.finish_reason.clone(),
+            usage: self.state.usage.clone(),
+        })
+    }
+}
+
+impl Stream for AssemblingStream {
     type Item = Result<GenerationEvent, just_common::error::TransportError>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
@@ -60,13 +103,13 @@ impl Stream for ConversationStream {
 
         match &item {
             Poll::Ready(Some(Ok(GenerationEvent::Text { delta }))) => {
-                this.state.lock().unwrap().content.push_str(delta);
+                this.state.content.push_str(delta);
             }
             Poll::Ready(Some(Ok(GenerationEvent::Reasoning { delta }))) => {
-                this.state.lock().unwrap().reasoning.push_str(delta);
+                this.state.reasoning.push_str(delta);
             }
             Poll::Ready(Some(Ok(GenerationEvent::ToolCall { delta }))) => {
-                let mut state = this.state.lock().unwrap();
+                let state = &mut this.state;
                 let index = delta.index.unwrap_or(0) as usize;
                 while state.tool_calls.len() <= index {
                     state.tool_calls.push(AccumulatingCall::default());
@@ -81,21 +124,17 @@ impl Stream for ConversationStream {
                     state.tool_calls[index].arguments.push_str(arguments);
                 }
             }
-            Poll::Ready(Some(Ok(GenerationEvent::End { response_id, .. }))) => {
-                let state = this.state.lock().unwrap();
-                if let (Some(settings), Some(assistant)) =
-                    (state.settings.clone(), build_assistant(&state))
-                {
-                    let capture = StreamCapture {
-                        settings,
-                        messages: state.messages.clone(),
-                        assistant,
-                        response_id: response_id.clone(),
-                    };
-                    if let Ok(mut slot) = this.slot.lock() {
-                        *slot = Some(capture);
-                    }
-                }
+            Poll::Ready(Some(Ok(GenerationEvent::Usage { usage }))) => {
+                // Usage reports are last-wins: a final report supersedes any earlier one.
+                this.state.usage = Some(usage.clone());
+            }
+            Poll::Ready(Some(Ok(GenerationEvent::End {
+                finish_reason,
+                response_id,
+            }))) => {
+                let state = &mut this.state;
+                state.finish_reason = finish_reason.clone();
+                state.response_id = response_id.clone();
             }
             _ => {}
         }
@@ -104,9 +143,9 @@ impl Stream for ConversationStream {
     }
 }
 
-impl fmt::Debug for ConversationStream {
+impl fmt::Debug for AssemblingStream {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ConversationStream").finish_non_exhaustive()
+        f.debug_struct("AssemblingStream").finish_non_exhaustive()
     }
 }
 
