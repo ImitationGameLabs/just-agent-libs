@@ -366,4 +366,15 @@ mod tests {
             assert_eq!(reason, expected, "wire {wire:?}");
         }
     }
+
+    #[test]
+    fn text_only_assistant_message_round_trips() {
+        let message = Message::assistant("Plain text reply with no tool calls.");
+
+        let json = serde_json::to_value(&message).unwrap();
+        assert!(json.get("tool_calls").is_none());
+
+        let back: Message = serde_json::from_value(json).unwrap();
+        assert_eq!(back, message);
+    }
 }
