@@ -13,6 +13,7 @@
 //! [`LlmBackend::new`] (the trait constructor, with the trait in scope),
 //! or from a pre-built provider client via each backend's `from_provider_client`.
 
+mod assembly;
 mod conversation;
 mod factory;
 
