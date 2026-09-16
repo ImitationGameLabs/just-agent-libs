@@ -46,6 +46,10 @@ pub const DEFAULT_READ_TIMEOUT: Duration = Duration::from_secs(120);
 ///
 /// Use this when you need to customise TLS, proxy, connection pool, or other transport
 /// settings but still want the library to manage authentication headers.
+///
+/// Injected headers are applied through reqwest's `default_headers`, which overwrites a
+/// builder preset for the same key: a preset `Authorization` or `Accept` is replaced, while
+/// every other preset header is kept as-is.
 pub fn build_client(
     builder: reqwest::ClientBuilder,
     api_key: &str,
@@ -61,10 +65,12 @@ pub fn build_client(
 /// Applies a caller-provided set of default headers to a builder, then builds.
 ///
 /// Unlike [`build_client`] (which forces Bearer auth), this is for providers with a different
-/// authentication scheme — e.g. Anthropic's `x-api-key` plus `anthropic-version` headers. A JSON
-/// `Accept` header is guaranteed: it defaults to `application/json` and is only overridden if the
-/// caller supplied one. Custom transport settings (TLS, proxy, connection pool) are preserved via
-/// the caller-provided builder.
+/// authentication scheme: e.g. Anthropic's `x-api-key` plus `anthropic-version` headers. A JSON
+/// `Accept` header is guaranteed: when the caller's header map does not carry one,
+/// `application/json` is inserted. At the builder layer the map is applied through reqwest's
+/// `default_headers`, which overwrites a builder preset for any key it carries, the injected
+/// `Accept` included, while other preset headers survive. Custom transport settings (TLS,
+/// proxy, connection pool) are preserved via the caller-provided builder.
 pub fn build_client_with_headers(
     builder: reqwest::ClientBuilder,
     mut default_headers: HeaderMap,

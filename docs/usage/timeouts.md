@@ -54,7 +54,8 @@ literals here and in the examples. The 30 s connect window is strict enough to
 fail fast on unreachable endpoints; the 120 s read window tolerates
 reasoning-model thinking pauses while still catching dead connections.
 
-Override either value by supplying your own builder:
+Supplying your own builder replaces the whole default client; there is no per-value
+override:
 
 ```rust
 use just_openai_compat::OpenAiCompatClient;
@@ -70,6 +71,33 @@ let client = OpenAiCompatClient::builder()
     )
     .build()?;
 ```
+
+## Which construction path gets the library defaults
+
+The defaults above live in each provider's client builder and apply only when you
+construct a provider directly and do not supply `.http_client(..)`. The rule is
+either/or: defaults never stack with your builder; a supplied builder replaces the
+default client wholesale.
+
+Through the unified entry points, `LlmBackend::new(http, ..)` and
+`BackendFactory::create(..)`, the builder you pass is forwarded untouched, so
+`.http_client(..)` is always considered supplied and **no library transport defaults
+apply on this path**. Timeouts and the TLS backend are then entirely yours to set;
+the idiom at the top of this page is the recommended baseline.
+
+## Request header precedence
+
+Builder-preset headers and library-injected headers do not follow one rule;
+precedence differs per header:
+
+| Header | Who wins |
+| --- | --- |
+| `Authorization` | The library. `build_client` injects the `Bearer` credential and overwrites any preset. |
+| `Accept` | The library's `application/json` default. A builder preset is overwritten; only an explicit entry in a provider's header map is respected. |
+| `User-Agent` and everything else | You. The library never sets them, so presets (or reqwest's built-in default) survive. |
+
+The mechanism: injected headers go through reqwest's `default_headers`, which merges
+per key by overwriting, and `User-Agent` is not among the injected keys.
 
 ## Non-streaming requests
 

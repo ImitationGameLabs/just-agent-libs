@@ -202,6 +202,13 @@ impl Conversation {
     ///
     /// On a stateful backend, a pure append to the previous turn is sent as `previous_response_id`
     /// plus only the new messages; anything else is sent as a full request.
+    ///
+    /// This is the convenience path for simple turns: it validates the request, manages the
+    /// continuation anchor, and returns a parsed [`GenerationResponse`]. Response headers and
+    /// the raw body are not exposed. For retries keyed on `Retry-After`, header inspection,
+    /// or custom status handling, hold a backend handle and use the three-step trait methods
+    /// [`prepare`](LlmBackend::prepare) / [`send`](LlmBackend::send) / [`parse`](LlmBackend::parse)
+    /// directly; they are defined on [`LlmBackend`], not on `Conversation`.
     pub async fn generate(
         &mut self,
         request: GenerationRequest,
@@ -230,6 +237,11 @@ impl Conversation {
     /// The returned [`ConversationStream`] forwards events unchanged and, once consumed through its
     /// terminal `End` event, records the assembled assistant message and response id for the next
     /// turn to adopt.
+    ///
+    /// As with [`generate`](Self::generate), this is the convenience path: response headers and
+    /// the raw body are not exposed. For header-aware retries or custom status handling,
+    /// use the three-step trait methods [`prepare_streaming`](LlmBackend::prepare_streaming) /
+    /// [`send`](LlmBackend::send) / [`parse_streaming`](LlmBackend::parse_streaming) directly.
     pub async fn stream_generate(
         &mut self,
         request: GenerationRequest,

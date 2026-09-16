@@ -84,6 +84,9 @@ impl<'de> Deserialize<'de> for ImageDetail {
 }
 
 /// Assistant message emitted by the model.
+///
+/// Deserialization treats an absent `tool_calls` list as empty, so a plain text reply
+/// round-trips through its own serialized form.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct AssistantMessage {
     #[serde(skip_serializing_if = "Option::is_none")]

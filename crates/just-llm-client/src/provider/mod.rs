@@ -215,7 +215,9 @@ pub trait LlmBackend: Identifiable + CapabilityNegotiation + Send + Sync {
     /// a concrete `Self`.
     ///
     /// Configure `http` with `connect_timeout` + `read_timeout` rather than a single
-    /// `timeout` so streaming responses are not aborted mid-flight; see
+    /// `timeout` so streaming responses are not aborted mid-flight. Unlike direct provider
+    /// construction, no library transport defaults apply on this path: `http` is forwarded
+    /// as an explicit client, so timeouts and the TLS backend are the caller's to set; see
     /// `docs/usage/timeouts.md`.
     #[allow(clippy::new_ret_no_self)]
     fn new(
