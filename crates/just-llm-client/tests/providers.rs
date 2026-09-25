@@ -15,6 +15,8 @@ use just_llm_client::provider::DeepSeekBackend;
 use just_llm_client::provider::OpenAiCompatBackend;
 #[cfg(feature = "responses")]
 use just_llm_client::provider::OpenAiResponsesBackend;
+#[cfg(feature = "anthropic")]
+use just_llm_client::types::generation::MessageContent;
 #[cfg(feature = "responses")]
 use just_llm_client::types::generation::StopSequence;
 #[cfg(any(
@@ -38,7 +40,7 @@ use just_llm_client::{
     LlmBackend, captured_body,
     error::BackendError,
     provider_rejection,
-    types::generation::{GenerationEvent, GenerationRequest, Message, MessageContent},
+    types::generation::{GenerationEvent, GenerationRequest, Message},
 };
 #[cfg(any(
     feature = "deepseek",
