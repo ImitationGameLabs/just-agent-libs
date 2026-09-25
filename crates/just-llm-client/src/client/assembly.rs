@@ -90,6 +90,7 @@ impl AssemblingStream {
             message,
             finish_reason: self.state.finish_reason.clone(),
             usage: self.state.usage.clone(),
+            meta: None,
         })
     }
 }

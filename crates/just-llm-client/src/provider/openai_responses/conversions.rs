@@ -434,6 +434,7 @@ impl From<Response> for client_gen::GenerationResponse {
             },
             finish_reason,
             usage,
+            meta: None,
         }
     }
 }

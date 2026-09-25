@@ -2,6 +2,7 @@
 #![allow(missing_docs)]
 
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 
 use super::{
     message::{AssistantMessage, Reasoning, ToolCall},
@@ -21,6 +22,20 @@ pub struct GenerationResponse {
     pub finish_reason: Option<super::shared::FinishReason>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub usage: Option<Usage>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub meta: Option<ResponseMeta>,
+}
+
+/// Transport-level observations attached by the client after a successful call.
+///
+/// Both fields are best-effort: providers omit or alias these freely, and absence of either
+/// does not make a response less usable.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct ResponseMeta {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub latency: Option<Duration>,
 }
 
 impl GenerationResponse {

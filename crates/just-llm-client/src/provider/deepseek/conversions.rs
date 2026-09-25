@@ -288,6 +288,7 @@ impl From<provider_chat::ChatCompletion> for client_gen::GenerationResponse {
                 message: choice.message.into(),
                 finish_reason: choice.finish_reason.map(Into::into),
                 usage,
+                meta: None,
             },
             None => Self {
                 id: response.id,
@@ -299,6 +300,7 @@ impl From<provider_chat::ChatCompletion> for client_gen::GenerationResponse {
                 },
                 finish_reason: None,
                 usage,
+                meta: None,
             },
         }
     }

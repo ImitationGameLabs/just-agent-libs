@@ -16,7 +16,7 @@ pub use message::{
     ToolCall,
 };
 pub use request::GenerationRequest;
-pub use response::GenerationResponse;
+pub use response::{GenerationResponse, ResponseMeta};
 pub use shared::{
     CompletionTokensDetails, FinishReason, FunctionDefinition, NamedToolChoice,
     NamedToolChoiceFunction, ReasoningEffort, ResponseFormat, ResponseFormatType, StopSequence,
@@ -297,6 +297,7 @@ mod tests {
             },
             finish_reason: Some(FinishReason::Stop),
             usage: None,
+            meta: None,
         };
 
         assert_eq!(response.text(), Some("hello"));

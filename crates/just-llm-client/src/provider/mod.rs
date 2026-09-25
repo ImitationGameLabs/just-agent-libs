@@ -10,6 +10,7 @@ mod openai_responses;
 pub mod validation;
 
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 
@@ -56,6 +57,12 @@ where
         };
         futures_util::stream::iter(events)
     }))
+}
+
+/// Fill `meta.latency` on a parsed response without clobbering transport metadata the
+/// adapter already extracted (e.g. `request_id`), so the library's timing points compose.
+pub(crate) fn attach_latency(response: &mut GenerationResponse, latency: Duration) {
+    response.meta.get_or_insert_default().latency = Some(latency);
 }
 
 /// Unified trait for the runtime-selected LLM provider surface.
@@ -140,6 +147,11 @@ pub trait LlmBackend: Identifiable + CapabilityNegotiation + Send + Sync {
     /// Pair with [`prepare`](LlmBackend::prepare) + [`send`](LlmBackend::send) when you need
     /// the raw response in hand, e.g. to inspect `retry-after` / `x-ratelimit-*` headers, or
     /// to re-send a clone of the prepared request (via try_clone) for retry, before deserializing.
+    ///
+    /// Transport metadata (e.g. `x-request-id`) lands in [`GenerationResponse::meta`]
+    /// when the provider sends it. No latency is measured on this path: call sites driving
+    /// [`prepare`](LlmBackend::prepare) + [`send`](LlmBackend::send) + `parse` by hand can time
+    /// the call themselves; [`generate`](LlmBackend::generate) attaches it.
     async fn parse(&self, response: reqwest::Response) -> Result<GenerationResponse, BackendError>;
 
     /// Parse a raw response into a normalized streaming event stream.
@@ -158,14 +170,21 @@ pub trait LlmBackend: Identifiable + CapabilityNegotiation + Send + Sync {
     /// inside [`prepare`](LlmBackend::prepare) deliberately: this entry point attributes
     /// invalid-request errors to `generate`, while `prepare` attributes them to itself,
     /// so both messages stay correct.
+    ///
+    /// The returned response's `meta.latency` measures this call end-to-end; drivers that
+    /// run [`prepare`](LlmBackend::prepare) + [`send`](LlmBackend::send) +
+    /// [`parse`](LlmBackend::parse) themselves can time it instead.
     async fn generate(
         &self,
         request: GenerationRequest,
     ) -> Result<GenerationResponse, BackendError> {
+        let started = Instant::now();
         validate_non_streaming_request(&request, "generate", "stream_generate")?;
         let prepared = self.prepare(request)?;
         let response = self.send(prepared).await?;
-        self.parse(response).await
+        let mut parsed = self.parse(response).await?;
+        attach_latency(&mut parsed, started.elapsed());
+        Ok(parsed)
     }
 
     /// Execute a streaming generation: validate -> prepare_streaming -> send -> parse_streaming.
@@ -227,4 +246,47 @@ pub trait LlmBackend: Identifiable + CapabilityNegotiation + Send + Sync {
     ) -> Result<Arc<dyn LlmBackend>, BackendConstructError>
     where
         Self: Sized;
+}
+
+#[cfg(test)]
+mod attach_latency_tests {
+    use super::*;
+    use crate::types::generation::{AssistantMessage, ResponseMeta};
+
+    fn response(meta: Option<ResponseMeta>) -> GenerationResponse {
+        GenerationResponse {
+            id: "r".to_owned(),
+            model: "m".to_owned(),
+            message: AssistantMessage {
+                content: None,
+                tool_calls: Vec::new(),
+                reasoning: None,
+            },
+            finish_reason: None,
+            usage: None,
+            meta,
+        }
+    }
+
+    #[test]
+    fn attach_latency_preserves_request_id_and_fills_missing_meta() {
+        let mut with_id = response(Some(ResponseMeta {
+            request_id: Some("req-1".to_owned()),
+            latency: None,
+        }));
+        attach_latency(&mut with_id, Duration::from_millis(7));
+        assert_eq!(
+            with_id.meta.as_ref().unwrap().request_id.as_deref(),
+            Some("req-1")
+        );
+        assert_eq!(
+            with_id.meta.unwrap().latency,
+            Some(Duration::from_millis(7))
+        );
+
+        let mut bare = response(None);
+        attach_latency(&mut bare, Duration::from_millis(7));
+        assert_eq!(bare.meta.as_ref().unwrap().request_id, None);
+        assert_eq!(bare.meta.unwrap().latency, Some(Duration::from_millis(7)));
+    }
 }

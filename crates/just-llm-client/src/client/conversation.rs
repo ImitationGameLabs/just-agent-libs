@@ -47,12 +47,12 @@
 //! the caller rebuilds the conversation or disables storage with [`Conversation::with_store`];
 //! the library never silently falls back and hides the loss.
 
-use std::{collections::HashSet, fmt, sync::Arc};
+use std::{collections::HashSet, fmt, sync::Arc, time::Instant};
 
 pub use super::assembly::ConversationStream;
 use crate::{
     BackendError,
-    provider::LlmBackend,
+    provider::{LlmBackend, attach_latency},
     types::generation::{
         AssistantMessage, GenerationRequest, GenerationResponse, Message, ReasoningEffort,
         ResponseFormat, StopSequence, ToolChoice, ToolDefinition,
@@ -245,13 +245,17 @@ impl Conversation {
     /// expose response headers or the raw body. For header-aware retries or custom status
     /// handling, drive [`prepare`](Self::prepare) / [`send`](LlmBackend::send) /
     /// [`parse`](LlmBackend::parse) / [`adopt`](Self::adopt) yourself.
+    ///
+    /// The returned response's `meta.latency` measures this call end-to-end.
     pub async fn generate(
         &mut self,
         request: GenerationRequest,
     ) -> Result<GenerationResponse, BackendError> {
+        let started = Instant::now();
         let prepared = self.prepare(request)?;
         let raw = self.backend.send(prepared).await?;
-        let response = self.backend.parse(raw).await?;
+        let mut response = self.backend.parse(raw).await?;
+        attach_latency(&mut response, started.elapsed());
         self.adopt(response.clone())?;
         Ok(response)
     }
@@ -352,12 +356,10 @@ fn validate_tool_results(messages: &[Message]) -> Result<(), BackendError> {
                     issued.insert(call.id.as_str());
                 }
             }
-            Message::Tool { tool_call_id, .. } => {
-                if !issued.contains(tool_call_id.as_str()) {
-                    return Err(BackendError::invalid_request(format!(
-                        "tool result {tool_call_id} has no preceding assistant tool call in the message list"
-                    )));
-                }
+            Message::Tool { tool_call_id, .. } if !issued.contains(tool_call_id.as_str()) => {
+                return Err(BackendError::invalid_request(format!(
+                    "tool result {tool_call_id} has no preceding assistant tool call in the message list"
+                )));
             }
             _ => {}
         }
@@ -434,6 +436,7 @@ mod tests {
                 message,
                 finish_reason: Some(FinishReason::Stop),
                 usage: None,
+                meta: None,
             }
         }
 
@@ -590,6 +593,37 @@ mod tests {
         assert!(requests[1].previous_response_id.is_none());
         assert!(requests[1].store.is_none());
         assert_eq!(requests[1].messages, m2);
+    }
+
+    #[tokio::test]
+    async fn generate_attaches_latency_to_the_returned_response() {
+        let backend = Arc::new(MockBackend::new(false));
+        backend.queue_response(MockBackend::response("r1", MockBackend::assistant("a1")));
+        let mut conv = Conversation::new(backend);
+
+        let response = conv
+            .generate(GenerationRequest::new("mock", vec![Message::user("q1")]))
+            .await
+            .unwrap();
+
+        let meta = response
+            .meta
+            .expect("Conversation::generate measures latency");
+        assert!(meta.latency.is_some());
+        assert_eq!(meta.request_id, None);
+    }
+
+    #[tokio::test]
+    async fn backend_generate_attaches_latency_to_the_returned_response() {
+        let backend = Arc::new(MockBackend::new(false));
+        backend.queue_response(MockBackend::response("r1", MockBackend::assistant("a1")));
+
+        let response = backend
+            .generate(GenerationRequest::new("mock", vec![Message::user("q1")]))
+            .await
+            .unwrap();
+
+        assert!(response.meta.as_ref().unwrap().latency.is_some());
     }
 
     #[tokio::test]

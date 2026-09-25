@@ -105,12 +105,22 @@ impl LlmBackend for OpenAiResponsesBackend {
     // --- parse + rendering ---
 
     async fn parse(&self, response: reqwest::Response) -> Result<GenerationResponse, BackendError> {
+        // Borrow transport headers before the SDK consumes the response body.
+        let request_id = response
+            .headers()
+            .get("x-request-id")
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_owned);
         let native: just_openai_responses::types::response::Response = self
             .client
             .parse(response)
             .await
             .map_err(|e| BackendError::provider(self.family(), e))?;
-        Ok(native.into())
+        let mut normalized: GenerationResponse = native.into();
+        if let Some(id) = request_id {
+            normalized.meta.get_or_insert_default().request_id = Some(id);
+        }
+        Ok(normalized)
     }
 
     async fn parse_streaming(
@@ -198,5 +208,44 @@ impl ModelCatalog for OpenAiResponsesBackend {
                 })
                 .collect(),
         })
+    }
+}
+
+#[cfg(test)]
+mod parse_meta_tests {
+    use super::*;
+
+    fn backend() -> OpenAiResponsesBackend {
+        OpenAiResponsesBackend::from_provider_client(just_openai_responses::ResponsesClient::new(
+            reqwest::Client::new(),
+            "https://api.openai.com/v1".to_owned(),
+        ))
+    }
+
+    fn wire_response(header: Option<(&str, &str)>) -> reqwest::Response {
+        let body = r#"{"id":"resp_1","object":"response","created_at":0,"status":"completed","model":"gpt-4.1","output":[]}"#;
+        let mut builder = http::Response::builder().status(200);
+        if let Some((name, value)) = header {
+            builder = builder.header(name, value);
+        }
+        reqwest::Response::from(builder.body(body.to_owned()).unwrap())
+    }
+
+    #[tokio::test]
+    async fn parse_attaches_transport_request_id_header() {
+        let parsed = backend()
+            .parse(wire_response(Some(("x-request-id", "req-123"))))
+            .await
+            .unwrap();
+        assert_eq!(
+            parsed.meta.as_ref().unwrap().request_id.as_deref(),
+            Some("req-123")
+        );
+    }
+
+    #[tokio::test]
+    async fn parse_without_header_leaves_request_id_absent() {
+        let parsed = backend().parse(wire_response(None)).await.unwrap();
+        assert_eq!(parsed.meta, None);
     }
 }

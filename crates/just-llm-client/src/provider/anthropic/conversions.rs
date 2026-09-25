@@ -403,6 +403,7 @@ impl From<just_anthropic::types::message::Message> for client_gen::GenerationRes
             },
             finish_reason: wire_finish_reason(message.stop_reason),
             usage: Some(wire_usage_to_client(message.usage)),
+            meta: None,
         }
     }
 }

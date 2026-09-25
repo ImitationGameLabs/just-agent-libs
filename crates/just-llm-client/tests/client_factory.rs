@@ -127,6 +127,7 @@ fn response_for_model(model: String) -> GenerationResponse {
         },
         finish_reason: None,
         usage: None,
+        meta: None,
     }
 }
 

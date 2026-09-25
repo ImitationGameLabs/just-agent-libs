@@ -100,6 +100,20 @@ let generation = backend.parse(response).await?;
 For convenience, `generate()` and `stream_generate()` compose prepare + send + parse
 into a single call.
 
+## Response metadata
+
+Non-streaming responses may carry a `meta` field (`ResponseMeta`) with two optional,
+best-effort observations filled in by the library:
+
+- `request_id` is the provider's request identifier, extracted from the response headers when
+  present (`x-request-id` on OpenAI-compatible and DeepSeek endpoints, `request-id` on Anthropic).
+- `latency` is the measured end-to-end call duration, attached by `generate()` and by
+  `Conversation::generate()`.
+
+Providers may omit the headers, so both fields are optional and their absence is normal. The
+manual prepare-send-parse path carries `request_id` but no `latency`; time the call yourself
+there if you need it. A response is never rejected for missing metadata.
+
 ## Runtime-selected provider example
 
 The workspace also includes:
