@@ -61,6 +61,15 @@ println!("{json}");
 
 Pair with `just-llm-client` for HTTP transport and provider-neutral abstractions.
 
+## API key handling
+
+Every builder takes the API key as a plain string and wraps it in `just_common::ApiKey` at the
+boundary: the value is wiped from memory when dropped, `Debug` shows `ApiKey([REDACTED])`, and
+there is no way to print or serialize it by accident. The only read is `ApiKey::expose`, called
+inside the library exactly where the key is handed to the HTTP stack; treat the result as
+transport input — never log, format or echo it. A key that is empty after trimming, or holds
+characters that cannot go in an HTTP header, is rejected when the builder's `build` runs.
+
 ## Environment variables for examples
 
 ```bash

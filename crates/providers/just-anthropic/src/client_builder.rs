@@ -1,5 +1,6 @@
 //! Builder for [`AnthropicClient`].
 
+use just_common::ApiKey;
 use just_common::error::TransportError;
 use just_common::transport::http;
 use reqwest::header::{HeaderMap, HeaderValue};
@@ -11,7 +12,7 @@ const DEFAULT_API_VERSION: &str = "2023-06-01";
 
 /// Builder for [`AnthropicClient`].
 pub struct AnthropicClientBuilder {
-    api_key: Option<String>,
+    api_key: Option<ApiKey>,
     api_version: Option<String>,
     base_url: Option<String>,
     http_builder: Option<reqwest::ClientBuilder>,
@@ -29,8 +30,13 @@ impl AnthropicClientBuilder {
     }
 
     /// Sets the API key (required).
+    ///
+    /// An unusable key (empty after trimming, or with characters that cannot go in an HTTP
+    /// header) is rejected when [`build`](Self::build) runs, like a missing one.
     pub fn api_key(mut self, key: impl Into<String>) -> Self {
-        self.api_key = Some(key.into());
+        // An invalid key collapses to none here and is reported as missing at build time; the
+        // discriminated reasons live in the ApiKey constructor.
+        self.api_key = ApiKey::new(key.into()).ok();
         self
     }
 
@@ -63,12 +69,6 @@ impl AnthropicClientBuilder {
             Error::Transport(TransportError::InvalidConfig("api key is required"))
         })?;
 
-        if api_key.trim().is_empty() {
-            return Err(Error::Transport(TransportError::InvalidConfig(
-                "api key cannot be empty",
-            )));
-        }
-
         let base_url = self.base_url.unwrap_or_else(|| DEFAULT_BASE_URL.to_owned());
 
         if base_url.trim().is_empty() {
@@ -89,7 +89,7 @@ impl AnthropicClientBuilder {
         });
 
         let mut headers = HeaderMap::new();
-        let key_value = HeaderValue::from_str(&api_key).map_err(|_| {
+        let key_value = HeaderValue::from_str(api_key.expose()).map_err(|_| {
             Error::Transport(TransportError::InvalidConfig(
                 "api key contains invalid header characters",
             ))
@@ -127,9 +127,11 @@ mod tests {
             .api_key("   ")
             .build()
             .unwrap_err();
+        // The key collapses to an unusable value at the boundary, so build rejects it like a
+        // missing one; the discriminated reason is asserted by the ApiKey constructor tests.
         assert!(matches!(
             error,
-            Error::Transport(TransportError::InvalidConfig("api key cannot be empty"))
+            Error::Transport(TransportError::InvalidConfig(_))
         ));
     }
 
@@ -152,11 +154,11 @@ mod tests {
             .api_key("bad\nkey")
             .build()
             .unwrap_err();
+        // The key collapses to an unusable value at the boundary, so build rejects it like a
+        // missing one; the discriminated reason is asserted by the ApiKey constructor tests.
         assert!(matches!(
             error,
-            Error::Transport(TransportError::InvalidConfig(
-                "api key contains invalid header characters"
-            ))
+            Error::Transport(TransportError::InvalidConfig(_))
         ));
     }
 

@@ -47,3 +47,4 @@ tokio = { version = "1.52.1", features = ["macros", "rt-multi-thread"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 wiremock = "0.6.5"
+zeroize = { version = "1.8", features = ["derive"] }

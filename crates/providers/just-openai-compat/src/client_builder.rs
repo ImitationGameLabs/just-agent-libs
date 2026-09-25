@@ -1,5 +1,6 @@
 //! Builder for [`OpenAiCompatClient`].
 
+use just_common::ApiKey;
 use just_common::error::TransportError;
 use just_common::transport::http;
 
@@ -7,7 +8,7 @@ use crate::{Error, OpenAiCompatClient};
 
 /// Builder for [`OpenAiCompatClient`].
 pub struct OpenAiCompatClientBuilder {
-    api_key: Option<String>,
+    api_key: Option<ApiKey>,
     base_url: Option<String>,
     http_builder: Option<reqwest::ClientBuilder>,
 }
@@ -23,8 +24,13 @@ impl OpenAiCompatClientBuilder {
     }
 
     /// Sets the API key (required).
+    ///
+    /// An unusable key (empty after trimming, or with characters that cannot go in an HTTP
+    /// header) is rejected when [`build`](Self::build) runs, like a missing one.
     pub fn api_key(mut self, key: impl Into<String>) -> Self {
-        self.api_key = Some(key.into());
+        // An invalid key collapses to none here and is reported as missing at build time; the
+        // discriminated reasons live in the ApiKey constructor.
+        self.api_key = ApiKey::new(key.into()).ok();
         self
     }
 
@@ -50,12 +56,6 @@ impl OpenAiCompatClientBuilder {
             Error::Transport(TransportError::InvalidConfig("api key is required"))
         })?;
 
-        if api_key.trim().is_empty() {
-            return Err(Error::Transport(TransportError::InvalidConfig(
-                "api key cannot be empty",
-            )));
-        }
-
         let base_url = self.base_url.ok_or_else(|| {
             Error::Transport(TransportError::InvalidConfig("base url is required"))
         })?;
@@ -73,7 +73,7 @@ impl OpenAiCompatClientBuilder {
                 .use_rustls_tls()
         });
 
-        let http = http::build_client(builder, &api_key)?;
+        let http = http::build_client(builder, api_key.expose())?;
 
         Ok(OpenAiCompatClient::new(http, base_url))
     }
@@ -98,9 +98,11 @@ mod tests {
             .api_key("   ")
             .build()
             .unwrap_err();
+        // The key collapses to an unusable value at the boundary, so build rejects it like a
+        // missing one; the discriminated reason is asserted by the ApiKey constructor tests.
         assert!(matches!(
             error,
-            Error::Transport(TransportError::InvalidConfig("api key cannot be empty"))
+            Error::Transport(TransportError::InvalidConfig(_))
         ));
     }
 

@@ -44,6 +44,9 @@ pub const DEFAULT_READ_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// Applies Bearer auth and JSON accept headers to a caller-provided builder, then builds.
 ///
+/// This call is the hand-off point: `api_key` is the value as it goes into the HTTP stack, so
+/// callers holding an [`ApiKey`](crate::ApiKey) pass it through `expose` here and nowhere else.
+///
 /// Use this when you need to customise TLS, proxy, connection pool, or other transport
 /// settings but still want the library to manage authentication headers.
 ///
