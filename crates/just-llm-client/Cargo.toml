@@ -16,6 +16,7 @@ deepseek = ["dep:just-deepseek"]
 openai-compat = ["dep:just-openai-compat"]
 responses = ["dep:just-openai-responses"]
 anthropic = ["dep:just-anthropic"]
+full = ["deepseek", "openai-compat", "responses", "anthropic"]
 
 [dependencies]
 anyhow = { workspace = true }
