@@ -34,10 +34,12 @@
 //!
 //! [`Conversation::stream_generate`] returns a [`ConversationStream`] that forwards every event
 //! unchanged while assembling the assistant message from the deltas. Recording the turn is
-//! explicit: consume the stream through its terminal `End` event, take the assembled response
-//! with `into_response`, and pass it to [`Conversation::adopt`]. A stream that never reaches
-//! `End`, whether dropped or cut short by an error, leaves nothing to adopt, so the previous
-//! anchor stays valid and the next turn continues from it.
+//! explicit: consume the stream until it ends, not merely until its terminal `End` event —
+//! stopping at `End` and dropping the stream leaves the response body unread, so the HTTP
+//! connection is closed instead of reused — then take the assembled response with
+//! `into_response` and pass it to [`Conversation::adopt`]. A stream that never reaches `End`,
+//! whether dropped or cut short by an error, leaves nothing to adopt, so the previous anchor
+//! stays valid and the next turn continues from it.
 //!
 //! # Failures
 //!
@@ -263,11 +265,11 @@ impl Conversation {
     /// Executes a streaming generation turn: prepare_streaming, send, parse_streaming.
     ///
     /// The returned [`ConversationStream`] forwards events unchanged while assembling the
-    /// assistant message. Recording the turn is explicit: consume the stream through its terminal
-    /// `End` event, take the assembled response with
-    /// `into_response`, and pass it to
-    /// [`adopt`](Self::adopt). Until then [`last_message`](Self::last_message) keeps reporting
-    /// the previous settled turn.
+    /// assistant message. Recording the turn is explicit: consume the stream until it ends, not
+    /// merely until its terminal `End` event — stopping at `End` and dropping the stream leaves
+    /// the response body unread, so the HTTP connection is closed instead of reused — then take
+    /// the assembled response with `into_response` and pass it to [`adopt`](Self::adopt). Until
+    /// then [`last_message`](Self::last_message) keeps reporting the previous settled turn.
     pub async fn stream_generate(
         &mut self,
         request: GenerationRequest,

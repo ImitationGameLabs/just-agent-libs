@@ -153,9 +153,15 @@ On stateless backends (chat completions, Anthropic) the same code degrades to a 
 so one code path works across all families. Stateful chaining requires the `responses` feature;
 `Conversation::is_stateful()` reports whether the effective mode is stateful. Streaming turns are
 covered too: `Conversation::stream_generate` returns a `ConversationStream` that assembles the
-assistant message; consume it to `End`, take the response with `into_response`, and pass it to
-`Conversation::adopt` to anchor the turn. `into_response` returns `None` for an unconsumed stream
-or a turn that carries no id; such a turn is not adopted and the previous anchor remains valid.
+assistant message. Consume it until `next()` returns `None`, not merely until the `End` event:
+stopping at `End` and dropping the stream leaves the response body unread, so the HTTP connection
+is closed instead of reused.
+For streams that end with a `[DONE]` terminator, the client drains the rest of the body for up
+to 100 ms, as long as the consumer keeps polling; that drain is best-effort, so an expired
+budget or a transport error just closes the connection instead of failing the completed
+response. Take the response with `into_response` and pass it to `Conversation::adopt` to anchor
+the turn. `into_response` returns `None` for a stream that never reached `End`, or a turn that
+carries no id; such a turn is not adopted and the previous anchor remains valid.
 Configure the HTTP client with `connect_timeout` + `read_timeout` rather than a single `timeout`
 so long streams are not aborted mid-flight; see [timeouts](timeouts.md).
 

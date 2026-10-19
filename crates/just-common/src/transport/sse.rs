@@ -8,11 +8,31 @@
 //! here, so a malicious or broken server emitting very large events — or withholding the
 //! terminating blank line — can drive unbounded memory growth. Acceptable today because providers
 //! bound event size server-side; tighten if this is ever exposed to untrusted endpoints.
+//!
+//! # Terminator handling: a bounded drain after `[DONE]`
+//!
+//! `[DONE]` ends the events, not the response: the body still carries its framing end, and a
+//! consumer that stops reading at `[DONE]` drops the body mid-response, which forces the HTTP
+//! client to close the connection instead of returning it to the pool. The parser therefore
+//! keeps reading and discarding bytes for up to `DRAIN_BUDGET` (100 ms) after `[DONE]`, so a
+//! shared client can reuse the connection.
+//!
+//! The budget bounds the wait the consumer sees on its final poll, and letting it expire is
+//! not an error: a peer that holds the response open without sending anything ends the drain and
+//! the connection closes, so no consumer waits on a peer that will never finish. Bytes read
+//! during the drain are discarded, never decoded or yielded, and a transport error during the
+//! drain stops it. Abandoning the drain — by expiry or by error — is reported at `trace` level
+//! and never surfaces as an error: the stream has already delivered its last chunk, and a
+//! connection that cannot be reused is not worth turning a completed response into an error.
+//!
+//! The drain waits on a tokio timer, so the stream must be driven on a tokio runtime with the
+//! time driver enabled.
 
 use std::{
     fmt,
     pin::Pin,
     task::{Context, Poll},
+    time::Duration,
 };
 
 use async_stream::try_stream;
@@ -20,12 +40,25 @@ use futures_core::Stream;
 use futures_util::StreamExt;
 use reqwest::header::CONTENT_TYPE;
 use serde::de::DeserializeOwned;
+use tracing::trace;
 
 use crate::error::TransportError;
 
 type BoxedJsonStream<T> = Pin<Box<dyn Stream<Item = Result<T, TransportError>> + Send>>;
 
+/// How long the parser keeps draining the response body after a `[DONE]` event.
+///
+/// Matches the drain timeout the OpenAI Python client uses for the same purpose: long enough
+/// for the framing end of a live response to arrive, short enough that a peer withholding it
+/// cannot delay the consumer noticeably.
+const DRAIN_BUDGET: Duration = Duration::from_millis(100);
+
 /// Generic JSON-over-SSE stream.
+///
+/// The bounded drain this stream performs after the terminator event waits on a tokio
+/// timer, so it must be driven on a tokio runtime with the time driver enabled. The drain
+/// is capped at `DRAIN_BUDGET` (100 ms), which bounds the extra wait the consumer sees on
+/// its final poll.
 pub struct JsonEventStream<T> {
     inner: BoxedJsonStream<T>,
 }
@@ -63,6 +96,33 @@ where
 
                 if done {
                     break;
+                }
+            }
+
+            if done {
+                // Keep reading to the framing end so the client can return the connection to
+                // its pool. The drain is best-effort: an expired budget and a transport error
+                // both just stop it, because the stream already delivered its last chunk.
+                let drain = tokio::time::timeout(DRAIN_BUDGET, async {
+                    while let Some(next) = bytes.next().await {
+                        next?;
+                    }
+
+                    Ok::<(), reqwest::Error>(())
+                })
+                .await;
+
+                match drain {
+                    Ok(Ok(())) => {}
+                    Ok(Err(error)) => trace!(
+                        error = %error,
+                        "SSE stream ended at [DONE]; the drain stopped on a transport error \
+                         with the response body unfinished, closing the connection"
+                    ),
+                    Err(_) => trace!(
+                        "SSE stream ended at [DONE]; the drain budget expired with the \
+                         response body unfinished, closing the connection"
+                    ),
                 }
             }
 

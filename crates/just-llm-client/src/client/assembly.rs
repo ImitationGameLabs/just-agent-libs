@@ -2,7 +2,7 @@
 //!
 //! [`AssemblingStream`] wraps the backend generation event stream, forwards every event
 //! unchanged, and accumulates the assistant message from text, reasoning, and tool-call deltas.
-//! Once the terminal `End` event has been consumed,
+//! Once the stream has forwarded its terminal `End` event,
 //! [`into_response`](AssemblingStream::into_response) yields the assembled response for the
 //! caller to record with `Conversation::adopt`.
 
@@ -46,11 +46,13 @@ struct AccumulatingCall {
 /// Assembling wrapper around a backend generation event stream.
 ///
 /// Forwards every event unchanged while assembling the assistant message from the deltas.
-/// Consume the stream through its terminal `End` event, then take the assembled response with
+/// Consume the stream until it ends, not merely until its terminal `End` event: stopping there
+/// and dropping the stream leaves the response body unread, so the HTTP connection is closed
+/// instead of reused. Then take the assembled response with
 /// [`into_response`](AssemblingStream::into_response): `None` means there is nothing to record,
 /// either because the stream never reached `End`, or because the backend is stateless and the
 /// `End` event carried no response id. Both share the meaning "no adoptable response".
-#[must_use = "a turn is only recorded by consuming the stream to `End` and adopting the response obtained via `into_response`"]
+#[must_use = "a turn is only recorded by consuming the stream through its terminal `End` event and adopting the response obtained via `into_response`"]
 pub struct AssemblingStream {
     inner: GenerationStream,
     state: StreamState,
