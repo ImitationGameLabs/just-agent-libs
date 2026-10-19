@@ -12,6 +12,13 @@ mirror the upstream provider API shapes.
 
 If you want a provider-neutral abstraction, see [just-llm-client](just-llm-client.md).
 
+Each crate enables HTTP/2 by default: `http2 = ["just-common/http2"]` together with
+`default = ["http2"]`. That is a pass-through, not a decision of its own — a default build
+negotiates h2 over TLS whenever the server does. The switch is build-level rather than per crate:
+turning it on anywhere in one build turns it on for every provider in that build, so it cannot be
+scoped to a single provider. To build without it, disable default features where you depend on the
+crate, in a build where no other path turns it on; see [HTTP/2 in just-llm-client](just-llm-client.md#http2).
+
 ## DeepSeek types
 
 - `types::chat` — Chat completion request/response types, messages, tool definitions

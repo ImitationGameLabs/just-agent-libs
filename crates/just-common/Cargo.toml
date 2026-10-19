@@ -14,6 +14,10 @@ categories = [
   "parser-implementations",
 ]
 
+[features]
+# Off here on purpose: the providers and `just-llm-client` turn it on; low-level users opt in.
+http2 = ["reqwest/http2"]
+
 [dependencies]
 async-stream = { workspace = true }
 futures-core = { workspace = true }
@@ -27,4 +31,13 @@ tracing = { workspace = true }
 zeroize = { workspace = true }
 
 [dev-dependencies]
+http-body-util = { workspace = true }
+hyper = { workspace = true, features = ["server", "http1", "http2"] }
+hyper-util = { workspace = true, features = ["tokio"] }
+rcgen = { workspace = true }
+tokio-rustls = { workspace = true }
 wiremock = { workspace = true }
+
+[[test]]
+name = "h2_protocol"
+required-features = ["http2"]

@@ -23,10 +23,13 @@ name = "just-agent-libs"
 just-common = { path = "crates/just-common", version = "0.2.0" }
 just-llm-client = { path = "crates/just-llm-client", version = "0.2.0" }
 # Providers
-just-deepseek = { path = "crates/providers/just-deepseek", version = "0.2.0" }
-just-openai-compat = { path = "crates/providers/just-openai-compat", version = "0.2.0" }
-just-openai-responses = { path = "crates/providers/just-openai-responses", version = "0.1.0" }
-just-anthropic = { path = "crates/providers/just-anthropic", version = "0.1.0" }
+# default-features = false: just-llm-client re-opens only the http2 feature it needs (`?/http2`).
+# Keeping provider defaults off here is what lets a consumer turn h2 back off: it can disable
+# default features and re-pick the providers without the providers' own defaults reappearing.
+just-deepseek = { path = "crates/providers/just-deepseek", version = "0.2.0", default-features = false }
+just-openai-compat = { path = "crates/providers/just-openai-compat", version = "0.2.0", default-features = false }
+just-openai-responses = { path = "crates/providers/just-openai-responses", version = "0.1.0", default-features = false }
+just-anthropic = { path = "crates/providers/just-anthropic", version = "0.1.0", default-features = false }
 
 anyhow = "1.0.102"
 async-trait = "0.1.89"
@@ -35,15 +38,26 @@ dotenvy = "0.15.7"
 futures-core = "0.3.32"
 futures-util = "0.3.32"
 http = "1.4.0"
+http-body-util = "0.1.5"
+hyper = "1.12.0"
+hyper-util = "0.1.21"
 reqwest = { version = "0.13.2", default-features = false, features = [
   "json",
   "rustls",
   "stream",
 ] }
+# Not pinned: 0.14.8 and later require rustc 1.88 (this workspace is on 1.86), so the MSRV-aware
+# resolver settles on 0.14.7; raising the MSRV later lets cargo update jump versions silently.
+# 0.14.10 also wants aws-lc-rs ^1.18, ahead of what rustls resolves today.
+rcgen = { version = "0.14", default-features = false, features = [
+  "crypto",
+  "aws_lc_rs",
+] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 thiserror = "2.0.18"
 tokio = { version = "1.52.1", features = ["macros", "rt-multi-thread"] }
+tokio-rustls = "0.26.6"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 wiremock = "0.6.5"

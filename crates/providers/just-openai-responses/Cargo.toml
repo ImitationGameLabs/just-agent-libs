@@ -10,6 +10,13 @@ rust-version.workspace = true
 keywords = ["openai", "llm", "ai", "responses"]
 categories = ["api-bindings"]
 
+[features]
+# The only feature allowed in `default`: consumers reaching this crate through just-llm-client get
+# only what http2 re-opens, so any other default here would drop silently for them. A direct
+# dependency still receives whatever this default carries.
+http2 = ["just-common/http2"]
+default = ["http2"]
+
 [dependencies]
 just-common = { workspace = true }
 reqwest = { workspace = true }

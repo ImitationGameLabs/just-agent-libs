@@ -9,11 +9,11 @@
 //! terminating blank line — can drive unbounded memory growth. Acceptable today because providers
 //! bound event size server-side; tighten if this is ever exposed to untrusted endpoints.
 //!
-//! # Terminator handling: a bounded drain after `[DONE]`
+//! # Terminator handling: a bounded drain after `[DONE]` over HTTP/1.1
 //!
-//! `[DONE]` ends the events, not the response: the body still carries its framing end, and a
-//! consumer that stops reading at `[DONE]` drops the body mid-response, which forces the HTTP
-//! client to close the connection instead of returning it to the pool. The parser therefore
+//! Over HTTP/1.1, `[DONE]` ends the events, not the response: the body still carries its framing end,
+//! and a consumer that stops reading at `[DONE]` drops the body mid-response, which forces the
+//! HTTP client to close the connection instead of returning it to the pool. The parser therefore
 //! keeps reading and discarding bytes for up to `DRAIN_BUDGET` (100 ms) after `[DONE]`, so a
 //! shared client can reuse the connection.
 //!
@@ -25,8 +25,12 @@
 //! and never surfaces as an error: the stream has already delivered its last chunk, and a
 //! connection that cannot be reused is not worth turning a completed response into an error.
 //!
-//! The drain waits on a tokio timer, so the stream must be driven on a tokio runtime with the
-//! time driver enabled.
+//! Over HTTP/2 the parser skips the drain and returns as soon as `[DONE]` arrives: discarding the
+//! unread remainder resets only this stream, and the connection stays reusable, so waiting for a
+//! framing end would buy nothing.
+//!
+//! Over HTTP/1.1 the drain waits on a tokio timer, so the stream must be driven on a tokio runtime
+//! with the time driver enabled; the HTTP/2 path never waits on one.
 
 use std::{
     fmt,
@@ -55,10 +59,10 @@ const DRAIN_BUDGET: Duration = Duration::from_millis(100);
 
 /// Generic JSON-over-SSE stream.
 ///
-/// The bounded drain this stream performs after the terminator event waits on a tokio
-/// timer, so it must be driven on a tokio runtime with the time driver enabled. The drain
-/// is capped at `DRAIN_BUDGET` (100 ms), which bounds the extra wait the consumer sees on
-/// its final poll.
+/// Over HTTP/1.1 the bounded drain this stream performs after the terminator event waits on a
+/// tokio timer, so the stream must be driven on a tokio runtime with the time driver enabled;
+/// the drain is capped at `DRAIN_BUDGET` (100 ms), which bounds the extra wait the consumer
+/// sees on its final poll. Over HTTP/2 the drain is skipped.
 pub struct JsonEventStream<T> {
     inner: BoxedJsonStream<T>,
 }
@@ -70,6 +74,7 @@ where
     /// Creates a stream from a successful SSE response.
     pub fn from_response(response: reqwest::Response) -> Result<Self, TransportError> {
         ensure_event_stream(&response)?;
+        let version = response.version();
 
         let stream = try_stream! {
             let mut bytes = response.bytes_stream();
@@ -99,7 +104,12 @@ where
                 }
             }
 
-            if done {
+            if done && version == reqwest::Version::HTTP_2 {
+                // The drain exists to finish an HTTP/1.1 body and hand its connection back:
+                // over HTTP/2, dropping the unread remainder resets this stream alone and the
+                // connection stays reusable, so waiting would buy nothing.
+                trace!("SSE stream ended at [DONE] over HTTP/2; no drain needed");
+            } else if done {
                 // Keep reading to the framing end so the client can return the connection to
                 // its pool. The drain is best-effort: an expired budget and a transport error
                 // both just stop it, because the stream already delivered its last chunk.

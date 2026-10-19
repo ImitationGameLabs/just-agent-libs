@@ -32,8 +32,13 @@ reqwest::Client::builder()
   TLS handshake). Fires once, during connection setup.
 - [`read_timeout`] — an **idle** timeout that **resets on every successful
   read**. As long as no single gap between frames exceeds it, the stream can run
-  arbitrarily long. A genuinely stalled connection (no bytes for the whole
+  arbitrarily long. A genuinely stalled response body (no bytes for the whole
   window) still fails.
+
+`read_timeout` is per request, and stays so under HTTP/2: each response body is timed on its own,
+so a busy connection does not mask a stalled stream. `connect_timeout` is per connection: one h2
+connection carries many requests, and a request that reuses an open connection never waits on it.
+Diagnose a stall per response body — traffic elsewhere on the connection says nothing about this.
 
 [`connect_timeout`]: https://docs.rs/reqwest/~0.13/reqwest/struct.ClientBuilder.html#method.connect_timeout
 [`read_timeout`]: https://docs.rs/reqwest/~0.13/reqwest/struct.ClientBuilder.html#method.read_timeout

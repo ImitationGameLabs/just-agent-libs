@@ -88,9 +88,10 @@ events via [`Conversation::last_message`] and adopt it as the next anchor on com
 | `openai-compat` | yes     | Enables the [`just-openai-compat`] backend      |
 | `responses`     | no      | Enables the [`just-openai-responses`] backend   |
 | `anthropic`     | no      | Enables the [`just-anthropic`] backend          |
+| `http2`         | yes     | Enables HTTP/2 support in the transport         |
 
-The DeepSeek and OpenAI-compatible backends are enabled by default. Disable default features and
-enable only what you need:
+The DeepSeek and OpenAI-compatible backends are enabled by default, as is `http2`: a default
+build negotiates h2 over TLS when the server does. Disable default features and enable only what you need:
 
 ```toml
 [dependencies]

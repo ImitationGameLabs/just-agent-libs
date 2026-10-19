@@ -11,12 +11,22 @@ keywords = ["llm", "ai", "agent", "harness", "lightweight"]
 categories = ["api-bindings", "asynchronous", "web-programming::http-client"]
 
 [features]
-default = ["deepseek", "openai-compat"]
+default = ["deepseek", "openai-compat", "http2"]
 deepseek = ["dep:just-deepseek"]
 openai-compat = ["dep:just-openai-compat"]
 responses = ["dep:just-openai-responses"]
 anthropic = ["dep:just-anthropic"]
-full = ["deepseek", "openai-compat", "responses", "anthropic"]
+full = ["deepseek", "openai-compat", "responses", "anthropic", "http2"]
+# The `?/http2` entries keep each provider's own http2 flag in step with the transport feature
+# (nothing reads that flag yet). Whether h2 is on is decided elsewhere: the workspace closes the
+# providers' default features, and just-common keeps http2 out of its own defaults.
+http2 = [
+  "just-common/http2",
+  "just-deepseek?/http2",
+  "just-openai-compat?/http2",
+  "just-openai-responses?/http2",
+  "just-anthropic?/http2",
+]
 
 [dependencies]
 anyhow = { workspace = true }

@@ -134,6 +134,77 @@ directly callable, and routes optional operations through `CapabilityNegotiation
 negotiation returns a handle like `&dyn ModelCatalog`; unsupported
 backends fail at negotiation time instead of inside the capability method.
 
+## HTTP/2
+
+HTTP/2 is a Cargo feature named `http2`, and it is on by default: both the provider crates and
+`just-llm-client` enable it, so a default build negotiates `h2` over TLS and falls back to
+`http/1.1` when the server does not. `just-common` alone leaves it off, because it is the layer
+that should not pick a protocol on your behalf.
+
+Nothing in the API changes; the wire behavior does:
+
+- **ALPN** — TLS requests advertise `h2` alongside `http/1.1`. A server that negotiates only
+  `http/1.1` behaves exactly as before, drain included.
+- **Multiplexing** — concurrent calls to one host share a connection instead of each opening its
+  own, so the connection count is no longer a lever for concurrency and `pool_max_idle_per_host`
+  counts idle connections. `read_timeout` applies per response body; `connect_timeout` covers
+  the shared connection setup, which h2 reuses across requests. See [timeouts](timeouts.md).
+- **Cancellation** — dropping a response resets that one stream (`RST_STREAM`) instead of closing
+  the connection, so sibling calls keep running. The reset can reach the peer after your drop, so
+  do not rely on cancellation to stop work elsewhere.
+- **Errors** — connection-level shutdowns (`GOAWAY`) and stream resets surface as request errors
+  of their own, not as the `http/1.1` incomplete-message family.
+- **Proxies and gateways** — HTTP/2 is negotiated per hop. An intermediary that talks `http/1.1`
+  to the origin leaves the connection h2 only up to that hop, and the terminator shortcut below
+  applies only when the connection this client holds is h2.
+- **Terminator** — over HTTP/2 the parser returns as soon as `[DONE]` arrives. Discarding the
+  unread remainder resets this stream only and leaves the connection reusable, so waiting out
+  the drain would buy nothing.
+- **Build-level switch** — the feature is a property of the dependency graph, not of a client or a
+  provider: enabling it anywhere in one build enables it for every provider in that build, and it
+  cannot be narrowed to a single one.
+
+To build without HTTP/2, disable it where you consume the crate:
+
+```toml
+just-llm-client = { version = "0.2", default-features = false, features = ["deepseek"] }
+```
+
+That also drops the default provider selection, so name the provider features you want. The
+recipe works because the provider defaults are closed at the dependency declaration — the
+workspace sets `default-features = false` on each provider entry — and only this crate's `http2`
+feature re-enables them. The published manifest keeps that shape, and it is a promise this crate
+makes: it turns on only the provider features it names, never a provider's whole default set.
+
+Cleartext HTTP/2 (h2c) is not a toggle here: it belongs to the client you build, so opt in on the
+builder you hand in — `http_client(..)` keeps the `Authorization` and `Accept` injection intact:
+
+```rust
+use std::time::Duration;
+
+use just_openai_compat::OpenAiCompatClient;
+
+let client = OpenAiCompatClient::builder()
+    .api_key(api_key.clone())
+    .base_url("http://your-endpoint.example/v1")
+    .http_client(
+        reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(30))
+            .read_timeout(Duration::from_secs(120))
+            .http2_prior_knowledge(),
+    )
+    .build()?;
+```
+
+h2c assumes the endpoint speaks HTTP/2 in cleartext; servers generally need explicit configuration
+for that, and a mismatch fails hard instead of falling back. An already-built `reqwest::Client`
+passed to `OpenAiCompatClient::new(http, base_url)` carries no injected headers, so set your own.
+
+Not covered by the test suite: public-CA endpoints and system trust stores, real provider endpoints
+over HTTP/2, sandboxed (Nix) builds, and any latency or throughput benefit. The tests exercise the
+switch against a local h2c server and a self-signed TLS server whose ALPN list decides between h2
+and the HTTP/1.1 fallback.
+
 ## Stateful conversations
 
 `Conversation` (via `GenerationClient::conversation`) continues multi-turn conversations on
@@ -154,12 +225,14 @@ so one code path works across all families. Stateful chaining requires the `resp
 `Conversation::is_stateful()` reports whether the effective mode is stateful. Streaming turns are
 covered too: `Conversation::stream_generate` returns a `ConversationStream` that assembles the
 assistant message. Consume it until `next()` returns `None`, not merely until the `End` event:
-stopping at `End` and dropping the stream leaves the response body unread, so the HTTP connection
-is closed instead of reused.
-For streams that end with a `[DONE]` terminator, the client drains the rest of the body for up
-to 100 ms, as long as the consumer keeps polling; that drain is best-effort, so an expired
-budget or a transport error just closes the connection instead of failing the completed
-response. Take the response with `into_response` and pass it to `Conversation::adopt` to anchor
+stopping at `End` and dropping the stream leaves the response body unread, and over HTTP/1.1
+the connection is then closed instead of reused.
+Over HTTP/1.1, a `[DONE]`-terminated stream leaves the rest of the body unread, so the client
+drains it for up to 100 ms as long as the consumer keeps polling; the drain is best-effort, so an
+expired budget or a transport error just closes the connection instead of failing the completed
+response. Over HTTP/2 the parser returns as soon as `[DONE]` arrives: discarding the unread
+remainder resets this stream only, so the connection stays reusable without a drain.
+Take the response with `into_response` and pass it to `Conversation::adopt` to anchor
 the turn. `into_response` returns `None` for a stream that never reached `End`, or a turn that
 carries no id; such a turn is not adopted and the previous anchor remains valid.
 Configure the HTTP client with `connect_timeout` + `read_timeout` rather than a single `timeout`
