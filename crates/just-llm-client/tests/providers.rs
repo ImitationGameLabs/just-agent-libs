@@ -2249,3 +2249,91 @@ async fn anthropic_prepare_rejects_system_image_parts_as_unserializable() {
     let error = backend.prepare(request).unwrap_err();
     assert!(matches!(error, BackendError::Unserializable { .. }));
 }
+
+#[cfg(feature = "deepseek")]
+#[test]
+fn deepseek_prepare_omits_stream_options_unless_streaming() {
+    let backend = deepseek_backend_no_server();
+
+    for stream in [None, Some(false)] {
+        let mut request = GenerationRequest::new("deepseek-v4-pro", vec![Message::user("x")]);
+        request.stream = stream;
+        let prepared = backend.prepare(request).unwrap();
+        let body = prepared.body().and_then(|b| b.as_bytes()).unwrap();
+        let parsed: serde_json::Value = serde_json::from_slice(body).unwrap();
+
+        assert!(
+            parsed.get("stream_options").is_none(),
+            "non-streaming deepseek request carried stream_options: {parsed}"
+        );
+        if stream == Some(false) {
+            assert_eq!(
+                parsed["stream"], false,
+                "non-streaming deepseek request dropped stream = false: {parsed}"
+            );
+        } else {
+            assert!(
+                parsed.get("stream").is_none(),
+                "non-streaming deepseek request sent an explicit stream key: {parsed}"
+            );
+        }
+    }
+}
+
+#[cfg(feature = "deepseek")]
+#[test]
+fn deepseek_prepare_streaming_requests_usage_via_stream_options() {
+    let backend = deepseek_backend_no_server();
+    let request = GenerationRequest::new("deepseek-v4-pro", vec![Message::user("x")]);
+
+    let prepared = backend.prepare_streaming(request).unwrap();
+    let body = prepared.body().and_then(|b| b.as_bytes()).unwrap();
+    let parsed: serde_json::Value = serde_json::from_slice(body).unwrap();
+
+    assert_eq!(parsed["stream"], true);
+    assert_eq!(parsed["stream_options"]["include_usage"], true);
+}
+
+#[cfg(feature = "openai-compat")]
+#[test]
+fn openai_compat_prepare_omits_stream_options_unless_streaming() {
+    let backend = openai_backend_no_server();
+
+    for stream in [None, Some(false)] {
+        let mut request = GenerationRequest::new("gpt-4.1-mini", vec![Message::user("x")]);
+        request.stream = stream;
+        let prepared = backend.prepare(request).unwrap();
+        let body = prepared.body().and_then(|b| b.as_bytes()).unwrap();
+        let parsed: serde_json::Value = serde_json::from_slice(body).unwrap();
+
+        assert!(
+            parsed.get("stream_options").is_none(),
+            "non-streaming openai-compatible request carried stream_options: {parsed}"
+        );
+        if stream == Some(false) {
+            assert_eq!(
+                parsed["stream"], false,
+                "non-streaming openai-compatible request dropped stream = false: {parsed}"
+            );
+        } else {
+            assert!(
+                parsed.get("stream").is_none(),
+                "non-streaming openai-compatible request sent an explicit stream key: {parsed}"
+            );
+        }
+    }
+}
+
+#[cfg(feature = "openai-compat")]
+#[test]
+fn openai_compat_prepare_streaming_requests_usage_via_stream_options() {
+    let backend = openai_backend_no_server();
+    let request = GenerationRequest::new("gpt-4.1-mini", vec![Message::user("x")]);
+
+    let prepared = backend.prepare_streaming(request).unwrap();
+    let body = prepared.body().and_then(|b| b.as_bytes()).unwrap();
+    let parsed: serde_json::Value = serde_json::from_slice(body).unwrap();
+
+    assert_eq!(parsed["stream"], true);
+    assert_eq!(parsed["stream_options"]["include_usage"], true);
+}

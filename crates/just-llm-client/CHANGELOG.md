@@ -17,3 +17,6 @@
 - Streaming responses now drain the rest of the body after `[DONE]` so the connection
   can be reused; the drain is capped at 100 ms, never surfaces as an error, and consumers
   must consume to `None`.
+- Non-streaming requests no longer send `stream_options`: the field is only legal alongside
+  `stream = true`, and an upstream that validates this rejects the pair (DeepSeek 400).
+  Streaming requests still ask for `include_usage`.

@@ -183,11 +183,13 @@ impl TryFrom<client_gen::GenerationRequest> for provider_chat::ChatCompletionReq
             response_format: request.response_format.map(Into::into),
             stop: request.stop.map(Into::into),
             stream: request.stream,
-            // Request streaming usage so the normalized Usage event can fire: chat-completions
-            // only emits usage when include_usage is set.
-            stream_options: Some(provider_chat::StreamOptions {
-                include_usage: Some(true),
-            }),
+            // Usage in the stream only arrives when include_usage is set, and the option is
+            // invalid without stream = true; a non-streaming response carries usage in its body.
+            stream_options: request.stream.unwrap_or(false).then_some(
+                provider_chat::StreamOptions {
+                    include_usage: Some(true),
+                },
+            ),
             temperature: request.temperature,
             top_p: request.top_p,
             tools: request
